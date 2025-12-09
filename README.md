@@ -70,6 +70,12 @@ If there is a concrete metric, a sample dataset, and a golden output (or a clear
 
 ---
 
+## What we offer right now
+
+If you have one deterministic metric (backtest, BI metric, ecommerce report) and a golden output, we can run a one‑off lab on it and send back a simple report: how many AI‑generated variants passed, and how much faster the best correct one is than your baseline.
+
+---
+
 ## If you're interested
 
 If you:
