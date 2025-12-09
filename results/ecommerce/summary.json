@@ -1,0 +1,29 @@
+{
+  "task_name": "ecommerce_customer_country_metrics",
+  "dataset_path": "data/ecommerce/data.csv",
+  "oracle_output_path": "results/ecommerce/customer_country_metrics.csv",
+  "variants_total": 5,
+  "variants_passed": 4,
+  "baseline_runtime_ms": 197,
+  "fastest_passing_runtime_ms": 165,
+  "speedup_vs_baseline_pct": 16.2,
+  "passing_variants": [
+    {
+      "variant_id": "baseline",
+      "runtime_ms": 197
+    },
+    {
+      "variant_id": "intermediate_columns",
+      "runtime_ms": 199
+    },
+    {
+      "variant_id": "named_aggregation",
+      "runtime_ms": 171
+    },
+    {
+      "variant_id": "manual_sort_reset",
+      "runtime_ms": 165
+    }
+  ],
+  "run_timestamp_utc": "2025-12-07T15:48:17.591518+00:00Z"
+}
