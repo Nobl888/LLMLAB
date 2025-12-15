@@ -21,7 +21,7 @@ from pathlib import Path
 
 # Initialize private modules before importing routes
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from startup import setup_private_modules
+from api_validation.startup import setup_private_modules
 setup_private_modules()
 
 from routes import health, validate, auth
