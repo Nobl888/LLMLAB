@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from api_validation.startup import setup_private_modules
 setup_private_modules()
 
-from routes import health, validate, auth
+from api_validation.public.routes import health, validate, auth
 from middleware.audit_logging import AuditLoggingMiddleware, RequestIDMiddleware
 from middleware.rate_limiting import RateLimitingMiddleware
 
