@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 
 # Initialize private modules before importing routes
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from startup import setup_private_modules
 setup_private_modules()
 
@@ -52,6 +52,14 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
+@app.get("/")
+def root():
+    return {"name": "LLMlab Validation API", "status": "running"}
+
+@app.get("/whoami")
+def whoami():
+    return {"module": __name__, "file": __file__}
+
 # Security middleware stack (order matters: rate limit -> audit log -> request ID)
 if ENABLE_RATE_LIMITING:
     app.add_middleware(RateLimitingMiddleware)
@@ -74,17 +82,6 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(validate.router)
 app.include_router(auth.router)  # Admin key management endpoints
-
-# Root endpoint
-@app.get("/")
-def root():
-    return {
-        "name": "LLMlab Validation API",
-        "status": "running",
-        "docs": "/docs",
-        "health": "/health"
-    }
-
 
 # Global exception handler (optional, for cleaner error responses)
 @app.exception_handler(Exception)
