@@ -5,8 +5,10 @@ Optionally includes explanation + details if include_details=True (gated).
 
 Includes audit logging with request ID tracing and structured logs.
 """
-from fastapi import APIRouter, HTTPException, status, Request
+from fastapi import APIRouter, HTTPException, status, Request, Security
+from fastapi.security import APIKeyHeader
 from datetime import datetime
+import os
 import uuid
 import hashlib
 import json
@@ -24,6 +26,19 @@ router = APIRouter()
 
 # Audit logger (configured in main.py)
 audit_logger = logging.getLogger("audit")
+
+# Smoke test security: 404 for missing/wrong key (stealth mode)
+smoke_key_header = APIKeyHeader(name="X-Smoke-Key", auto_error=False)
+
+def require_smoke_key(api_key: str = Security(smoke_key_header)) -> None:
+    """
+    Require valid smoke key or return 404 (pretend route doesn't exist).
+    Set SMOKE_KEY in environment variables.
+    """
+    expected = os.getenv("SMOKE_KEY")
+    # If not configured, or missing/wrong key: pretend the route doesn't exist
+    if (not expected) or (api_key != expected):
+        raise HTTPException(status_code=404)
 
 
 def compute_hash(data: dict) -> str:
@@ -82,11 +97,11 @@ def mock_scoring(baseline: dict, candidate: dict, test_data: dict) -> dict:
     }
 
 
-@router.get("/_smoke")
+@router.get("/_smoke", dependencies=[Security(require_smoke_key)])
 async def smoke_test():
     """
     Smoke test endpoint with debug config info.
-    Returns validation service settings (timeouts, paths).
+    Requires X-Smoke-Key header. Returns 404 if missing/wrong.
     """
     return {
         "status": "ok",
@@ -94,8 +109,8 @@ async def smoke_test():
         "version": "1.0",
         "timeout_seconds": settings.execution_timeout_seconds,
         "defaults": {
-            "fixture_path": settings.default_fixture_path,
-            "baseline_kpi_path": settings.default_baseline_kpi_path,
+            "fixture_path": "[REDACTED]",  # Don't leak paths even to authorized callers
+            "baseline_kpi_path": "[REDACTED]",
         }
     }
 
