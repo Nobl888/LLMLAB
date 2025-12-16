@@ -59,7 +59,7 @@ def require_api_key_bearer(auth_header: str = Security(api_key_bearer_header)) -
     if not raw_key.startswith("llm_") or len(raw_key) < 12:
         raise HTTPException(status_code=404, detail="Not found")
 
-    key_prefix = raw_key[:11]  # "llm_" + 8 chars
+    key_prefix = raw_key[:12]  # "llm_" + 8 chars
     key_hash = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
     dsn = os.getenv("DATABASE_URL")
