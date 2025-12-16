@@ -82,11 +82,11 @@ def mock_scoring(baseline: dict, candidate: dict, test_data: dict) -> dict:
     }
 
 
-@router.get("/health")
-async def health():
+@router.get("/_smoke")
+async def smoke_test():
     """
-    Safe self-test endpoint for smoke checks.
-    No untrusted code execution; pure wiring check.
+    Smoke test endpoint with debug config info.
+    Returns validation service settings (timeouts, paths).
     """
     return {
         "status": "ok",
