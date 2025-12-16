@@ -159,11 +159,11 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             payload_hash = "sha256:error"
             body = b""
         
-        # Store body back on request (FastAPI needs it)
+        # Store body back on request (downstream needs it)
         async def receive():
             return {"type": "http.request", "body": body}
         
-        request.receive = receive
+        request._receive = receive
         
         # Measure latency
         start_time = time.time()
