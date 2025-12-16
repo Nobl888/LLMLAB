@@ -25,8 +25,8 @@ from api_validation.startup import setup_private_modules
 setup_private_modules()
 
 from api_validation.public.routes import health, validate, auth
-from middleware.audit_logging import AuditLoggingMiddleware, RequestIDMiddleware
-from middleware.rate_limiting import RateLimitingMiddleware
+from api_validation.public.middleware.audit_logging import AuditLoggingMiddleware, RequestIDMiddleware
+from api_validation.public.middleware.rate_limiting import RateLimitingMiddleware
 
 # Configure logging (audit logs to stdout, rotated by log handler)
 logging.basicConfig(
