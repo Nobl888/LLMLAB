@@ -5,7 +5,7 @@ Optionally includes explanation + details if include_details=True (gated).
 
 Includes audit logging with request ID tracing and structured logs.
 """
-from fastapi import APIRouter, HTTPException, status, Request, Security
+from fastapi import APIRouter, HTTPException, status, Request, Security, Header
 from fastapi.security import APIKeyHeader
 from datetime import datetime
 import os
@@ -88,6 +88,19 @@ def require_api_key_bearer(auth_header: str = Security(api_key_bearer_header)) -
     return {"tenant_id": str(tenant_id), "scopes": scopes}
 
 
+def require_tenant_match(
+    auth: dict = Security(require_api_key_bearer),
+    x_tenant_id: str | None = Header(default=None, alias="X-Tenant-ID"),
+) -> dict:
+    if not x_tenant_id:
+        raise HTTPException(status_code=400, detail="MISSING_TENANT_ID")
+
+    if x_tenant_id != auth["tenant_id"]:
+        raise HTTPException(status_code=403, detail="TENANT_MISMATCH")
+
+    return {"tenant_id": auth["tenant_id"], "scopes": auth["scopes"]}
+
+
 def compute_hash(data: dict) -> str:
     """Compute SHA256 hash of a data dict."""
     if data is None:
@@ -165,7 +178,7 @@ async def smoke_test():
 async def validate(
     request: Request,
     req_body: ValidateRequest,
-    auth: dict = Security(require_api_key_bearer)
+    ctx: dict = Security(require_tenant_match)
 ) -> ValidateResponse:
     """
     Validate a candidate against a baseline.
