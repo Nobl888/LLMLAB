@@ -3,7 +3,7 @@ Health check endpoint. Minimal, stable, no business logic.
 """
 from fastapi import APIRouter
 from datetime import datetime
-from schemas import HealthResponse
+from api_validation.public.schemas import HealthResponse
 
 router = APIRouter()
 
