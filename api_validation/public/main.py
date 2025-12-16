@@ -54,6 +54,9 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
+from api_validation.public.key_admin import router as key_admin_router
+app.include_router(key_admin_router)
+
 @app.get("/")
 def root():
     return {"name": "LLMlab Validation API", "status": "running"}
