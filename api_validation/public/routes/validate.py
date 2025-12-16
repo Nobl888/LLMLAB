@@ -100,14 +100,13 @@ def mock_scoring(baseline: dict, candidate: dict, test_data: dict) -> dict:
 @router.get("/_smoke", dependencies=[Security(require_smoke_key)])
 async def smoke_test():
     """
-    Smoke test endpoint with debug config info.
+    Smoke test endpoint with minimal diagnostic info.
     Requires X-Smoke-Key header. Returns 404 if missing/wrong.
     """
     return {
         "status": "ok",
         "service": "validation-api",
         "version": "1.0",
-        "timeout_seconds": settings.execution_timeout_seconds,
         "defaults": {
             "fixture_path": "[REDACTED]",  # Don't leak paths even to authorized callers
             "baseline_kpi_path": "[REDACTED]",
