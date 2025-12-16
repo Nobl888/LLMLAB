@@ -41,6 +41,53 @@ def require_smoke_key(api_key: str = Security(smoke_key_header)) -> None:
         raise HTTPException(status_code=404)
 
 
+# --- API key auth (Authorization: Bearer ...) ---
+import psycopg
+
+api_key_bearer_header = APIKeyHeader(name="Authorization", auto_error=False)
+
+def require_api_key_bearer(auth_header: str = Security(api_key_bearer_header)) -> dict:
+    # Stealth mode: return 404 for missing/wrong key
+    if not auth_header:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    parts = auth_header.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    raw_key = parts[1].strip()
+    if not raw_key.startswith("llm_") or len(raw_key) < 12:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    key_prefix = raw_key[:11]  # "llm_" + 8 chars
+    key_hash = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        raise HTTPException(status_code=503, detail="DB not configured")
+
+    with psycopg.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select tenant_id, scopes, status
+                from api_keys
+                where key_prefix = %s and key_hash = %s
+                """,
+                (key_prefix, key_hash),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    tenant_id, scopes, key_status = row
+    if key_status != "active":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    return {"tenant_id": str(tenant_id), "scopes": scopes}
+
+
 def compute_hash(data: dict) -> str:
     """Compute SHA256 hash of a data dict."""
     if data is None:
@@ -115,7 +162,11 @@ async def smoke_test():
 
 
 @router.post("/api/validate")
-async def validate(request: Request, req_body: ValidateRequest) -> ValidateResponse:
+async def validate(
+    request: Request,
+    req_body: ValidateRequest,
+    auth: dict = Security(require_api_key_bearer)
+) -> ValidateResponse:
     """
     Validate a candidate against a baseline.
     
