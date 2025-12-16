@@ -28,6 +28,7 @@ setup_private_modules()
 from api_validation.public.routes import health, validate, auth
 from api_validation.public.middleware.audit_logging import AuditLoggingMiddleware, RequestIDMiddleware
 from api_validation.public.middleware.rate_limiting import RateLimitingMiddleware
+from api_validation.public.db_init import init_db_if_enabled
 
 # Configure logging (audit logs to stdout, rotated by log handler)
 logging.basicConfig(
@@ -73,6 +74,10 @@ def health_db():
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+@app.on_event("startup")
+def _startup():
+    init_db_if_enabled()
 
 # Security middleware stack (order matters: rate limit -> audit log -> request ID)
 if ENABLE_RATE_LIMITING:
