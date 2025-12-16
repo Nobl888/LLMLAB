@@ -20,10 +20,11 @@ curl -i https://llmlab-t6zg.onrender.com/health
   "status": "ok",
   "service": "llmlab-validation-api",
   "version": "1.0.0",
-  "commit": "abc1234def567",
+  "commit": "<GIT_SHA>",
   "timestamp": "2025-12-16T13:40:00Z"
 }
 ```
+> Note: `commit` value reflects the actual deployed git SHA for debugging/support.
 
 ---
 
@@ -39,19 +40,20 @@ X-Tenant-ID: <your-tenant-id>
 Content-Type: application/json
 ```
 
-### Minimal Request (KPI Kit Mode)
+### Minimal Request (Mock Mode - Works Today)
 ```bash
 curl -X POST https://llmlab-t6zg.onrender.com/api/validate \
-  -H "Authorization: Bearer key_YOUR_API_KEY" \
-  -H "X-Tenant-ID: your-tenant-id" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "X-Tenant-ID: <YOUR_TENANT_ID>" \
   -H "Content-Type: application/json" \
   -d '{
-    "baseline_kpi_path": "path/to/baseline.py",
-    "candidate_kpi_path": "path/to/candidate.py",
-    "fixture_path": "path/to/fixture.csv",
-    "kpi_type": "profitmetrics"
+    "baseline_output": {"total_revenue": 1000000, "profit_margin": 0.25},
+    "candidate_output": {"total_revenue": 1000500, "profit_margin": 0.251},
+    "test_data": {"period": "2024-Q4", "dataset": "historical"}
   }'
 ```
+
+> **Note:** This example uses **mock mode** where you provide output data directly. The API also supports **KPI kit mode** with file paths (`baseline_kpi_path`, `candidate_kpi_path`, `fixture_path`), but this requires server-side file access and is currently limited to internal/admin use. For external API consumers, use mock mode as shown above.
 
 ### Response (200 OK)
 ```json
@@ -82,17 +84,19 @@ curl -X POST https://llmlab-t6zg.onrender.com/api/validate \
 
 ### Request Schema
 
-**KPI Kit Mode** (recommended):
+**Mock Mode** (recommended for external API consumers):
+- `baseline_output` (object, required): Baseline output data (dict/object with metrics)
+- `candidate_output` (object, required): Candidate output data (dict/object with metrics)
+- `test_data` (object, optional): Test cases/data metadata used
+- `include_details` (boolean, optional): Return detailed explanation (default: false)
+
+**KPI Kit Mode** (server-side only - requires file access):
 - `baseline_kpi_path` (string): Path to baseline KPI .py file
 - `candidate_kpi_path` (string): Path to candidate KPI .py file
 - `fixture_path` (string): Path to CSV fixture for execution
 - `kpi_type` (string): `profitmetrics` | `countmetrics` | `percentagemetrics` | `aggregationmetrics`
-- `include_details` (boolean, optional): Return detailed explanation (default: false)
 
-**Mock Mode** (backward compatible):
-- `baseline_output` (object): Baseline output data
-- `candidate_output` (object): Candidate output data
-- `test_data` (object): Test cases/data used
+> **Current Limitation:** KPI kit mode requires server-side file access on Render's ephemeral filesystem. External API consumers should use mock mode. File upload support may be added in a future release.
 
 ---
 
@@ -104,7 +108,7 @@ API keys are issued per tenant. Contact your administrator or use the admin key 
 ### Environment Variables (Render)
 Set these in Render Dashboard → Environment:
 ```
-SMOKE_KEY=<long-random-string>        # For /_smoke diagnostic endpoint
+SMOKE_KEY=<RENDER_GENERATED_SECRET>   # For /_smoke diagnostic endpoint (generate long random value)
 ENABLE_AUDIT_LOGGING=true             # Enable structured audit logs
 ENABLE_RATE_LIMITING=true             # Enable per-tenant rate limits
 ENABLE_REDACTION=true                 # Redact sensitive data in logs
@@ -113,7 +117,7 @@ ENABLE_REDACTION=true                 # Redact sensitive data in logs
 ### Protected Endpoints
 - `GET /health` - Public (no auth required)
 - `POST /api/validate` - Requires `Authorization: Bearer <api-key>` + `X-Tenant-ID` header
-- `GET /_smoke` - Requires `X-Smoke-Key` header (admin/diagnostic use only, returns 404 without key)
+- `GET /_smoke` - Requires `X-Smoke-Key: <YOUR_SMOKE_KEY>` header (admin/diagnostic use only, returns 404 without valid key)
 
 ---
 
