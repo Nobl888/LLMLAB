@@ -7,7 +7,7 @@
 # Usage: ./predeploy.sh
 # Exit code: 0 = all checks pass, 1 = failures detected
 
-set -e
+set -euo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -73,9 +73,9 @@ echo ""
 # Check 3: Detect short/ambiguous imports
 echo "✓ Check 3: Detecting problematic short imports..."
 # Note: domain_kits is at repo root so "from domain_kits..." is correct
-# Only flag short imports like "from middleware...", "from schemas...", etc.
-SHORT_IMPORTS=$(git grep -nE '^from (middleware|schemas|settings|routes|startup)\b' \
-    -- 'api_validation/**/*.py' 2>/dev/null || true)
+# Flag both 'from X import' and 'import X' forms for relative modules
+SHORT_IMPORTS=$( (git grep -nE '^from (middleware|schemas|settings|routes|startup)\b' -- 'api_validation/**/*.py' || true; \
+                  git grep -nE '^import (middleware|schemas|settings|routes|startup)\b' -- 'api_validation/**/*.py' || true) 2>/dev/null | sort -u)
 
 if [ -n "$SHORT_IMPORTS" ]; then
     echo -e "${RED}✗ FAIL: Short imports detected (will fail on Render):${NC}"
@@ -197,11 +197,15 @@ IMPORT_ERRORS=()
 PYTHON_FILES=$(git ls-files 'api_validation/**/*.py' 'domain_kits/**/*.py' 2>/dev/null || true)
 
 while IFS= read -r pyfile; do
-    # Extract imports: from api_validation.X.Y import Z or from domain_kits.X import Y
-    IMPORTS=$(grep -E '^from (api_validation|domain_kits)\.' "$pyfile" 2>/dev/null || true)
+    [ -z "$pyfile" ] && continue
     
+    # Extract both forms: 'from X import Y' and 'import X'
+    FROM_IMPORTS=$(grep -E '^from (api_validation|domain_kits)\.' "$pyfile" 2>/dev/null || true)
+    PLAIN_IMPORTS=$(grep -E '^import (api_validation|domain_kits)\b' "$pyfile" 2>/dev/null || true)
+    
+    # Process 'from X import Y' style
     while IFS= read -r import_line; do
-        if [ -z "$import_line" ]; then continue; fi
+        [ -z "$import_line" ] && continue
         
         # Extract module path: "from api_validation.public.schemas import X" -> "api_validation.public.schemas"
         MODULE_PATH=$(echo "$import_line" | sed -E 's/^from ([a-zA-Z0-9_.]+) import .*/\1/')
@@ -227,7 +231,35 @@ while IFS= read -r pyfile; do
                 fi
             fi
         fi
-    done <<< "$IMPORTS"
+    done <<< "$FROM_IMPORTS"
+    
+    # Process 'import X' or 'import X as Y' style
+    while IFS= read -r import_line; do
+        [ -z "$import_line" ] && continue
+        
+        # Extract module path: "import api_validation.public.schemas" or "import api_validation.public.schemas as s"
+        # Strip 'as alias' and comments
+        MODULE_PATH=$(echo "$import_line" | sed -E 's/^import ([a-zA-Z0-9_.]+).*/\1/' | sed 's/#.*//' | xargs)
+        
+        # Convert to file path
+        DIR_PATH="${MODULE_PATH//.//}"
+        FILE_PATH="${DIR_PATH}.py"
+        
+        # Check if it's a tracked file or directory
+        if ! git ls-files --error-unmatch "$FILE_PATH" > /dev/null 2>&1; then
+            if [ -d "$DIR_PATH" ]; then
+                if ! git ls-files --error-unmatch "${DIR_PATH}/__init__.py" > /dev/null 2>&1; then
+                    IMPORT_ERRORS+=("$pyfile: imports $MODULE_PATH but ${DIR_PATH}/__init__.py not tracked")
+                fi
+            else
+                if [ ! -f "$FILE_PATH" ] && [ ! -d "$DIR_PATH" ]; then
+                    IMPORT_ERRORS+=("$pyfile: imports $MODULE_PATH but neither $FILE_PATH nor $DIR_PATH/ exists")
+                else
+                    IMPORT_ERRORS+=("$pyfile: imports $MODULE_PATH but it's not tracked in git")
+                fi
+            fi
+        fi
+    done <<< "$PLAIN_IMPORTS"
 done <<< "$PYTHON_FILES"
 
 if [ ${#IMPORT_ERRORS[@]} -gt 0 ]; then
