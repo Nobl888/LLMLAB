@@ -18,6 +18,7 @@ import os
 import sys
 import logging
 from pathlib import Path
+import psycopg
 
 # Initialize private modules before importing routes
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -59,6 +60,19 @@ def root():
 @app.get("/whoami")
 def whoami():
     return {"module": __name__, "file": __file__}
+
+@app.get("/health/db")
+def health_db():
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        return {"ok": False, "error": "DATABASE_URL not set"}
+    try:
+        with psycopg.connect(dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1;")
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 # Security middleware stack (order matters: rate limit -> audit log -> request ID)
 if ENABLE_RATE_LIMITING:
