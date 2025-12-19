@@ -1,7 +1,10 @@
+"""Admin endpoints for API key management.
+
+These endpoints must never be publicly accessible without strong authentication.
+We use the same stealth smoke-key gate used for other diagnostic/admin routes.
 """
-Admin endpoints for API key management.
-"""
-from fastapi import APIRouter, HTTPException, status
+
+from fastapi import APIRouter, HTTPException, status, Security
 from pydantic import BaseModel
 from typing import Optional
 import os
@@ -10,7 +13,9 @@ import secrets
 import hashlib
 from uuid import uuid4
 
-router = APIRouter(prefix="/admin/keys", tags=["admin"])
+from api_validation.public.routes.validate import require_smoke_key
+
+router = APIRouter(prefix="/admin/keys", tags=["admin"], dependencies=[Security(require_smoke_key)], include_in_schema=False)
 
 
 class CreateKeyRequest(BaseModel):

@@ -1,28 +1,32 @@
-"""
-API Key management endpoints (admin).
+"""API Key management endpoints (admin).
 
-Operations:
-- Create a new API key
-- List API keys (redacted)
-- Rotate a key (issue new, mark old for revocation)
-- Revoke a key (immediate deactivation)
-- Check key validity (health check)
-
-Authentication:
-- All endpoints require a valid admin API key (Authorization: Bearer ...)
-- Admin keys have elevated scope ("admin") vs. regular keys ("api")
+NOTE:
+This module contains placeholder logic and must never be publicly exposed.
+If it is included, it is smoke-key gated (stealth 404) and hidden from OpenAPI.
 """
 
-from fastapi import APIRouter, HTTPException, status, Request, Depends
+from fastapi import APIRouter, HTTPException, status, Request, Security
+from fastapi.security import APIKeyHeader
 from datetime import datetime, timedelta
 import uuid
 import secrets
 import json
 import logging
+import os
 from pydantic import BaseModel
 from typing import Optional, List
 
-router = APIRouter()
+smoke_key_header = APIKeyHeader(name="X-Smoke-Key", auto_error=False)
+
+
+def require_smoke_key(api_key: str = Security(smoke_key_header)) -> None:
+    """Require valid smoke key or return 404 (stealth)."""
+    expected = os.getenv("SMOKE_KEY")
+    if (not expected) or (api_key != expected):
+        raise HTTPException(status_code=404)
+
+
+router = APIRouter(dependencies=[Security(require_smoke_key)])
 audit_logger = logging.getLogger("audit")
 
 
@@ -160,7 +164,7 @@ def _hash_secret(secret: str) -> str:
 
 # Endpoints
 
-@router.post("/api/admin/keys", response_model=CreateKeyResponse)
+@router.post("/api/admin/keys", response_model=CreateKeyResponse, include_in_schema=False)
 async def create_key(
     request: Request,
     req_body: CreateKeyRequest
@@ -223,7 +227,7 @@ async def create_key(
     )
 
 
-@router.get("/api/admin/keys", response_model=List[ListKeyResponse])
+@router.get("/api/admin/keys", response_model=List[ListKeyResponse], include_in_schema=False)
 async def list_keys(request: Request) -> List[ListKeyResponse]:
     """
     List all API keys (redacted; no secrets).
@@ -254,7 +258,7 @@ async def list_keys(request: Request) -> List[ListKeyResponse]:
     return result
 
 
-@router.post("/api/admin/keys/{key_id}/rotate", response_model=RotateKeyResponse)
+@router.post("/api/admin/keys/{key_id}/rotate", response_model=RotateKeyResponse, include_in_schema=False)
 async def rotate_key(
     request: Request,
     key_id: str,
@@ -334,7 +338,7 @@ async def rotate_key(
     )
 
 
-@router.post("/api/admin/keys/{key_id}/revoke", response_model=RevokeKeyResponse)
+@router.post("/api/admin/keys/{key_id}/revoke", response_model=RevokeKeyResponse, include_in_schema=False)
 async def revoke_key(
     request: Request,
     key_id: str,
@@ -381,7 +385,7 @@ async def revoke_key(
     )
 
 
-@router.get("/api/admin/keys/{key_id}/validate")
+@router.get("/api/admin/keys/{key_id}/validate", include_in_schema=False)
 async def validate_key(request: Request, key_id: str):
     """
     Validate a key (health check / introspection).
