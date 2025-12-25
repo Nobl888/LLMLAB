@@ -46,11 +46,12 @@ jobs:
       - name: Offline gates (syntax + import)
         run: |
           set -euo pipefail
-          python -m compileall -q api_validation tools
+          python -m compileall -q api_validation tools domain_kits
           python -c "import api_validation.public.routes.health"
           python -c "import api_validation.public.routes.validate"
           python -c "import api_validation.public.routes.contracts"
           python -c "import api_validation.public.routes.evidence"
+          python -c "import domain_kits.contract_invariants.engine"
 
       - name: Live smoke gate (/api/contracts/validate)
         if: ${{ secrets.LLMLAB_API_KEY != '' && secrets.LLMLAB_TENANT_ID != '' && (secrets.LLMLAB_API_BASE_URL != '' || secrets.LLMLAB_API_BASE != '') }}
