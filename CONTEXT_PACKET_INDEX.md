@@ -34,6 +34,12 @@ This file is a “carry-forward” index to avoid losing critical context when y
 - Database reachability: `GET /health/db`
 - Client smoke (hosted-safe contract mode): run `tools/client/smoke_validate_contract.py` or `bash scripts/run_validate_contract.sh ...`
 
+## Preserved early work (not deployed)
+
+- Branch: `review/stash0-main` (pushed to GitHub) preserves early/experimental work without changing Render’s deploy branch (`main`).
+- Contains: draft `evidence_pack` response bundle, draft contract/invariants mode inside `/api/validate`, draft `fixture_id` resolution via a `fixtures` table, and a `python-multipart` dependency.
+- Important: `main` is the deploy branch; treat `review/stash0-main` as a source of context/ideas to selectively merge later.
+
 ## Copy/paste prompt for a new chat
 
 Paste this as the first message in a new chat:

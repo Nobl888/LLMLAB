@@ -33,6 +33,11 @@ This is a dated snapshot index you can point new chats at (without moving any fi
 - Client smoke (hosted-safe contract mode): run `tools/client/smoke_validate_contract.py` or `bash scripts/run_validate_contract.sh ...`
 - Admin/bootstrap endpoints are smoke-key gated and stealth 404 without the smoke key (by design)
 
+## Preserved early work (not deployed)
+
+- Branch: `review/stash0-main` preserves early/experimental work that is not merged into the deployed `main` branch.
+- Contains: draft `evidence_pack`, draft contract/invariants mode inside `/api/validate`, and draft `fixture_id` resolution via a `fixtures` table.
+
 ## Copy/paste prompt for a new chat
 
 Paste this as the first message in a new chat:
