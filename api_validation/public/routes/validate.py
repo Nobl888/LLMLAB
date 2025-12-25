@@ -13,7 +13,7 @@ import uuid
 import hashlib
 import json
 import logging
-from ..schemas import ValidateRequest, ValidateResponse, ErrorResponse, RiskAssessment, SummaryStats, EvidenceBlock
+from ..schemas import ValidateRequest, ValidateResponse, ErrorResponse, RiskAssessment, SummaryStats, EvidenceBlock, EvidencePack
 from ..settings import settings
 
 # KPI Analytics kit imports
@@ -21,6 +21,9 @@ from domain_kits.kpi_analytics.runner import KPIRunner
 from domain_kits.kpi_analytics.normalizer import KPINormalizer
 from domain_kits.kpi_analytics.comparator_config import ComparatorConfig
 from domain_kits.kpi_analytics.error_taxonomy import KPIErrorTaxonomy
+
+# Contract/invariants kit (no code execution)
+from domain_kits.contract_invariants.engine import evaluate_contract
 
 router = APIRouter()
 
@@ -90,11 +93,8 @@ def require_api_key_bearer(auth_header: str = Security(api_key_bearer_header)) -
 
 def require_tenant_match(
     auth: dict = Security(require_api_key_bearer),
-    x_tenant_id: str | None = Header(default=None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Header(..., alias="X-Tenant-ID"),
 ) -> dict:
-    if not x_tenant_id:
-        raise HTTPException(status_code=400, detail="MISSING_TENANT_ID")
-
     if x_tenant_id != auth["tenant_id"]:
         raise HTTPException(status_code=403, detail="TENANT_MISMATCH")
 
@@ -107,6 +107,41 @@ def compute_hash(data: dict) -> str:
         data = {}
     data_str = json.dumps(data, sort_keys=True, default=str)
     return "sha256:" + hashlib.sha256(data_str.encode()).hexdigest()[:12]
+
+
+def _resolve_fixture_storage_path(*, tenant_id: str, fixture_id: str) -> tuple[str, str] | None:
+    """Resolve an uploaded fixture_id to an internal storage path.
+
+    Returns (storage_path, sha256) or None if not found/active.
+    Never returns this path to the caller.
+    """
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        raise HTTPException(status_code=503, detail="DB not configured")
+
+    with psycopg.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select storage_path, sha256
+                from fixtures
+                where id = %s and tenant_id = %s and status = 'active'
+                """,
+                (fixture_id, tenant_id),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        return None
+    storage_path, sha256 = row
+    return (str(storage_path), str(sha256))
+
+
+def _safe_hash_str(value: str | None) -> str | None:
+    """Hash a string value for safe echoing (avoid returning raw identifiers)."""
+    if not value:
+        return None
+    return compute_hash({"value": value})
 
 
 def _get_kpi_config(kpi_type: str):
@@ -174,7 +209,61 @@ async def smoke_test():
     }
 
 
-@router.post("/api/validate")
+@router.post(
+    "/api/validate",
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "Missing tenant header",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "missingTenant": {
+                            "summary": "Missing X-Tenant-ID header",
+                            "value": {
+                                "trace_id": "<UUID>",
+                                "status": "error",
+                                "error": {"code": "MISSING_TENANT_ID", "message": "MISSING_TENANT_ID"}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        403: {
+            "model": ErrorResponse,
+            "description": "Tenant mismatch",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "tenantMismatch": {
+                            "summary": "X-Tenant-ID doesn't match API key tenant",
+                            "value": {
+                                "trace_id": "<UUID>",
+                                "status": "error",
+                                "error": {"code": "TENANT_MISMATCH", "message": "TENANT_MISMATCH"}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    openapi_extra={
+        "parameters": [
+            {
+                "name": "X-Tenant-ID",
+                "in": "header",
+                "required": False,
+                "schema": {"type": "string"},
+                "description": (
+                    "Tenant context header. If missing, returns 400 MISSING_TENANT_ID. "
+                    "If it doesn't match the API key tenant, returns 403 TENANT_MISMATCH."
+                )
+            }
+        ]
+    }
+)
 async def validate(
     request: Request,
     req_body: ValidateRequest,
@@ -194,6 +283,15 @@ async def validate(
     - Every request must include X-Tenant-ID header
     - Audit logs are filtered by tenant_id to prevent cross-tenant visibility
     - Rate limiting is enforced per tenant
+    
+    Header Requirements:
+    - Authorization: Bearer <api-key> (required, validates API key)
+    - X-Tenant-ID: <tenant-uuid> (required, must match API key tenant)
+    
+    Error Responses:
+    - 400 MISSING_TENANT_ID: X-Tenant-ID header not provided
+    - 403 TENANT_MISMATCH: X-Tenant-ID doesn't match the API key's tenant
+    - 401: Invalid or missing API key
     """
     
     # Generate trace ID for this validation
@@ -243,21 +341,33 @@ async def validate(
         use_kpi_kit = all([
             req_body.baseline_kpi_path,
             req_body.candidate_kpi_path,
-            req_body.fixture_path,
+            (req_body.fixture_path or getattr(req_body, "fixture_id", None)),
         ])
+
+        use_contract_kit = (not use_kpi_kit) and bool(req_body.contract)
         
         if use_kpi_kit:
             # ===== KPI KIT MODE =====
             runner = KPIRunner()
             normalizer = KPINormalizer()
+
+            # If fixture_id is provided, resolve to a server-side path.
+            fixture_path = req_body.fixture_path
+            fixture_sha256 = None
+            fixture_id = getattr(req_body, "fixture_id", None)
+            if (not fixture_path) and fixture_id:
+                resolved = _resolve_fixture_storage_path(tenant_id=tenant_id, fixture_id=str(fixture_id))
+                if not resolved:
+                    raise HTTPException(status_code=404, detail={"code": "FIXTURE_NOT_FOUND", "message": "Fixture not found"})
+                fixture_path, fixture_sha256 = resolved
             
             # Execute baseline KPI
-            baseline_result = runner.execute(req_body.baseline_kpi_path, req_body.fixture_path)
+            baseline_result = runner.execute(req_body.baseline_kpi_path, fixture_path)
             if baseline_result.get("status") != "success":
                 raise Exception(f"Baseline KPI execution failed: {baseline_result.get('error')}")
             
             # Execute candidate KPI
-            candidate_result = runner.execute(req_body.candidate_kpi_path, req_body.fixture_path)
+            candidate_result = runner.execute(req_body.candidate_kpi_path, fixture_path)
             if candidate_result.get("status") != "success":
                 raise Exception(f"Candidate KPI execution failed: {candidate_result.get('error')}")
             
@@ -309,7 +419,11 @@ async def validate(
                 "path": req_body.candidate_kpi_path,
                 "output_type": candidate_result.get("output_type")
             })
-            test_data_hash = compute_hash({"fixture_path": req_body.fixture_path})
+            test_data_hash = compute_hash({
+                "fixture_id": str(fixture_id) if fixture_id else None,
+                "fixture_sha256": fixture_sha256,
+                "fixture_path": "[SERVER_PATH]" if fixture_path else None,
+            })
             
             # Prepare details if requested
             details = None
@@ -377,6 +491,57 @@ async def validate(
                 "failed_checks": failed_checks,
                 "recommendation": recommendation
             }
+        elif use_contract_kit:
+            # ===== CONTRACT / INVARIANTS MODE (no code execution) =====
+            baseline_obj = req_body.baseline_output or {}
+            candidate_obj = req_body.candidate_output or {}
+            contract_obj = req_body.contract or {}
+
+            contract_eval = evaluate_contract(
+                baseline=baseline_obj,
+                candidate=candidate_obj,
+                contract=contract_obj,
+            )
+
+            total_checks = int(contract_eval.get("total_checks") or 0)
+            failed_checks = int(contract_eval.get("failed_checks") or 0)
+            pass_rate = float(contract_eval.get("pass_rate") or 0.0)
+            match = (failed_checks == 0) and (total_checks > 0)
+
+            # Simple, deterministic score mapping (safe). Higher = safer/better match.
+            risk_score = max(0.0, min(10.0, 10.0 * pass_rate))
+            confidence = 95.0 if match else max(10.0, min(90.0, 50.0 + 40.0 * pass_rate))
+            category = "low" if pass_rate >= 0.9 else "medium" if pass_rate >= 0.6 else "high"
+            recommendation = "APPROVE" if pass_rate >= 0.95 else "REVIEW" if pass_rate >= 0.7 else "REJECT"
+
+            scoring_result = {
+                "risk_score": risk_score,
+                "confidence": confidence,
+                "category": category,
+                "pass_rate": pass_rate,
+                "total_checks": total_checks,
+                "failed_checks": failed_checks,
+                "recommendation": recommendation,
+            }
+
+            # Hashes for evidence (include contract hash via test_data_hash)
+            baseline_hash = compute_hash(baseline_obj)
+            candidate_hash = compute_hash(candidate_obj)
+            test_data_hash = compute_hash({
+                "test_data": (req_body.test_data or {}),
+                "contract": contract_obj,
+            })
+
+            details = None
+            explanation = None
+            if req_body.include_details:
+                # Never include raw values. Only rule ids/paths/messages.
+                failed_rules = [c for c in (contract_eval.get("checks") or []) if not c.get("ok")]
+                explanation = "Contract/invariant checks failed" if failed_rules else "All contract/invariant checks passed"
+                details = {
+                    "checks": contract_eval.get("checks"),
+                    "failed_rule_count": len(failed_rules),
+                }
         else:
             # ===== MOCK MODE (backward compatible) =====
             # Mock validation (in production, calls private/core_scoring.py)
@@ -393,6 +558,33 @@ async def validate(
             
             details = None
             explanation = None
+
+        # Build evidence pack (safe, portable). Never include code or file paths.
+        now_iso = datetime.utcnow().isoformat() + "Z"
+        mode = "kpi_kit" if use_kpi_kit else ("contract_invariants" if use_contract_kit else "mock")
+        domain = "analytics_kpi" if use_kpi_kit else ("contract_invariants" if use_contract_kit else "analytics_kpi")
+
+        safe_config: dict = {
+            "mode": mode,
+            "kpi_type": req_body.kpi_type,
+            "percentage_scale": req_body.percentage_scale,
+            "tolerances": (tolerances if use_kpi_kit else None),
+            "execution_timeout_seconds": settings.execution_timeout_seconds,
+            "include_details": bool(req_body.include_details),
+            "contract_hash": (compute_hash(req_body.contract) if use_contract_kit else None),
+        }
+
+        # Remove null-ish entries for cleanliness
+        safe_config = {k: v for k, v in safe_config.items() if v is not None}
+
+        tenant_context = {
+            "tenant_id_hash": _safe_hash_str(tenant_id),
+            "partner_id_hash": _safe_hash_str(partner_id),
+            "customer_id_hash": _safe_hash_str(customer_id),
+        }
+        tenant_context = {k: v for k, v in tenant_context.items() if v is not None}
+        if not tenant_context:
+            tenant_context = None
         
         # Build evidence block
         if use_kpi_kit and req_body.include_details:
@@ -402,9 +594,19 @@ async def validate(
                 candidate_hash=candidate_hash,
                 test_data_hash=test_data_hash,
                 timestamp=datetime.utcnow().isoformat() + "Z",
-                domain="analytics_kpi",
+                domain=domain,
                 explanation=explanation,
                 details=details
+            )
+        elif use_contract_kit and req_body.include_details:
+            evidence = EvidenceBlock(
+                baseline_hash=baseline_hash,
+                candidate_hash=candidate_hash,
+                test_data_hash=test_data_hash,
+                timestamp=datetime.utcnow().isoformat() + "Z",
+                domain=domain,
+                explanation=explanation,
+                details=details,
             )
         elif req_body.include_details:
             # Mock mode: use mock explanation and details
@@ -413,7 +615,7 @@ async def validate(
                 candidate_hash=candidate_hash,
                 test_data_hash=test_data_hash,
                 timestamp=datetime.utcnow().isoformat() + "Z",
-                domain="analytics_kpi",
+                domain=domain,
                 explanation=(
                     "Most test cases matched the baseline exactly; "
                     "small deviations only in edge-period tests."
@@ -430,7 +632,7 @@ async def validate(
                 candidate_hash=candidate_hash,
                 test_data_hash=test_data_hash,
                 timestamp=datetime.utcnow().isoformat() + "Z",
-                domain="analytics_kpi"
+                domain=domain
             )
         
         # Build response
@@ -448,7 +650,33 @@ async def validate(
                 failed_checks=scoring_result["failed_checks"]
             ),
             recommendation=scoring_result["recommendation"],
-            evidence=evidence
+            evidence=evidence,
+            evidence_pack=EvidencePack(
+                schema_version="1.0",
+                generated_at=now_iso,
+                trace_id=trace_id,
+                request_id=request_id,
+                domain=domain,
+                mode=mode,
+                api_version=req_body.api_version,
+                build_commit=os.getenv("BUILD_COMMIT"),
+                baseline_hash=baseline_hash,
+                candidate_hash=candidate_hash,
+                test_data_hash=test_data_hash,
+                risk=RiskAssessment(
+                    score=scoring_result["risk_score"],
+                    category=scoring_result["category"],
+                    confidence=scoring_result["confidence"],
+                ),
+                summary=SummaryStats(
+                    pass_rate=scoring_result["pass_rate"],
+                    total_checks=scoring_result["total_checks"],
+                    failed_checks=scoring_result["failed_checks"],
+                ),
+                recommendation=scoring_result["recommendation"],
+                config=safe_config,
+                tenant_context=tenant_context,
+            )
         )
         
         # Attach request ID to response

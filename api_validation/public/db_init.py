@@ -20,6 +20,22 @@ create table if not exists api_keys (
   revoked_at timestamptz null,
   last_used_at timestamptz null
 );
+
+create table if not exists fixtures (
+  id uuid primary key,
+  tenant_id uuid not null references tenants(id),
+  storage_path text not null,
+  sha256 text not null,
+  size_bytes bigint not null,
+  original_filename text not null,
+  content_type text not null,
+  status text not null default 'active',
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz null
+);
+
+create index if not exists idx_fixtures_tenant_id on fixtures(tenant_id);
+create index if not exists idx_fixtures_tenant_status on fixtures(tenant_id, status);
 """
 
 def init_db_if_enabled() -> None:

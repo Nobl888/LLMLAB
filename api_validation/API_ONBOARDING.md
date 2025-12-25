@@ -78,9 +78,51 @@ curl -X POST https://llmlab-t6zg.onrender.com/api/validate \
     "test_data_hash": "sha256:i9j0k1l2...",
     "timestamp": "2025-12-16T13:40:00Z",
     "domain": "analytics_kpi"
+  },
+  "evidence_pack": {
+    "schema_version": "1.0",
+    "generated_at": "2025-12-18T13:40:00Z",
+    "trace_id": "550e8400-e29b-41d4-a716-446655440000",
+    "request_id": "c759fefc-8969-4641-8406-06d2d9d73c86",
+    "domain": "analytics_kpi",
+    "mode": "mock",
+    "api_version": "v1",
+    "build_commit": "<GIT_SHA>",
+    "baseline_hash": "sha256:a1b2c3d4...",
+    "candidate_hash": "sha256:e5f6g7h8...",
+    "test_data_hash": "sha256:i9j0k1l2...",
+    "risk": {
+      "score": 2.3,
+      "category": "low",
+      "confidence": 89.5
+    },
+    "summary": {
+      "pass_rate": 0.95,
+      "total_checks": 20,
+      "failed_checks": 1
+    },
+    "recommendation": "APPROVE_WITH_MONITORING",
+    "config": {
+      "mode": "mock",
+      "kpi_type": "profitmetrics",
+      "percentage_scale": false,
+      "execution_timeout_seconds": 8,
+      "include_details": false
+    },
+    "tenant_context": {
+      "tenant_id_hash": "sha256:abcd1234efgh",
+      "partner_id_hash": "sha256:ijkl5678mnop"
+    }
   }
 }
 ```
+
+### Evidence Pack (Optional)
+The `evidence_pack` field is an optional, backwards-compatible addition intended for CI/CD artifact storage and audit trails.
+
+- It contains only **safe metadata**: hashes, request IDs, validation scores, and a sanitized config snapshot.
+- It does **not** include source code, internal file paths, secrets, or proprietary algorithm internals.
+
 
 ### Request Schema
 
