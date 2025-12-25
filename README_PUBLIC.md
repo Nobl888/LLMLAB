@@ -2,6 +2,22 @@ Make AI-generated code boringly reliable in domains where errors are expensive.
 
 Deterministic release gates for error-expensive workflows.
 
+---
+
+## 3-command onboarding (copy/paste)
+
+Prereqs: a deployed URL + `tenant_id` + `llm_...` API key.
+
+```bash
+export LLMLAB_API_BASE_URL="https://<your-service>"
+export LLMLAB_TENANT_ID="<tenant-uuid>"
+export LLMLAB_API_KEY="llm_<...>"
+
+bash scripts/run_validate_contract.sh templates/client/validate_contract_invoice.json
+```
+
+If you don’t have a tenant/key yet, use the smoke-key bootstrap flow in [LOCAL_CLIENT_TEST_RUNBOOK.md](LOCAL_CLIENT_TEST_RUNBOOK.md).
+
 You're starting to use LLMs (and agents / IDE copilots) to speed up code and automation—until you need to be sure the numbers, outputs, and operational decisions are actually correct.
 
 This project is a **deterministic release gate**: treat AI-generated code and AI-generated outputs as *stochastic candidates*, then validate them with **oracles, invariants, and reproducible evidence artifacts**.
@@ -23,6 +39,18 @@ It’s not “LLM eval.” It’s **release engineering for deterministic change
 - **A CI-style gate** for deterministic work: pass/fail + drift + recommendation.
 - **Portable evidence artifacts**: stable trace IDs + hashes + summary so you can attach results to PRs, tickets, or audits.
 - **Framework-agnostic enforcement**: works regardless of which tool generated the change (including no-LLM workflows).
+
+---
+
+## Why it’s different (for devs)
+
+Most tooling judges *text*. LLMLAB gates *deterministic consequences*.
+
+- You compare **baseline vs candidate outputs**, not model prompts.
+- You get an answer that’s safe to attach to PRs: trace IDs + hashes + summary.
+- You can start hosted-safe (artifact/contract mode) without ever executing customer code server-side.
+
+See a redacted example artifact: [EVIDENCE_ARTIFACT_EXAMPLE.md](EVIDENCE_ARTIFACT_EXAMPLE.md)
 
 ---
 
@@ -65,6 +93,8 @@ Use when the question is: *“Is this output valid, stable, and safe to consume?
 - No code execution: it’s deterministic, fast, and broadly applicable.
 
 This kit is “high leverage” because many products (agents, config generators, extractors, pipelines) ultimately emit JSON.
+
+For a developer map of kits + templates: [KIT_CATALOG.md](KIT_CATALOG.md)
 
 ---
 
