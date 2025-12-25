@@ -1,0 +1,73 @@
+name: llmlab-ci-gates
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  llmlab-gates:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preflight (secrets + safety)
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          echo "LLMLAB CI gates preflight"
+          
+          # Never print secret values; only presence.
+          if [ -n "${{ secrets.LLMLAB_API_BASE_URL }}" ]; then echo "- LLMLAB_API_BASE_URL: set"; else echo "- LLMLAB_API_BASE_URL: MISSING"; fi
+          if [ -n "${{ secrets.LLMLAB_API_BASE }}" ]; then echo "- LLMLAB_API_BASE (legacy): set"; else echo "- LLMLAB_API_BASE (legacy): MISSING"; fi
+          if [ -n "${{ secrets.LLMLAB_API_KEY }}" ]; then echo "- LLMLAB_API_KEY: set"; else echo "- LLMLAB_API_KEY: MISSING"; fi
+          if [ -n "${{ secrets.LLMLAB_TENANT_ID }}" ]; then echo "- LLMLAB_TENANT_ID: set"; else echo "- LLMLAB_TENANT_ID: MISSING"; fi
+
+          # Extra guardrail: warn if someone points CI at localhost.
+          BASE_URL="${{ secrets.LLMLAB_API_BASE_URL || secrets.LLMLAB_API_BASE }}"
+          case "$BASE_URL" in
+            http://localhost*|https://localhost*|http://127.0.0.1*|https://127.0.0.1*)
+              echo "WARNING: LLMLAB_API_BASE_URL appears to be localhost. CI should point at a hosted URL." ;;
+            *)
+              : ;;
+          esac
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --upgrade pip
+          pip install --no-cache-dir -r requirements.txt
+
+      - name: Offline gates (syntax + import)
+        run: |
+          set -euo pipefail
+          python -m compileall -q api_validation tools
+          python -c "import api_validation.public.routes.health"
+          python -c "import api_validation.public.routes.validate"
+
+      - name: Live smoke gate (/api/validate)
+        if: ${{ secrets.LLMLAB_API_KEY != '' && secrets.LLMLAB_TENANT_ID != '' && (secrets.LLMLAB_API_BASE_URL != '' || secrets.LLMLAB_API_BASE != '') }}
+        env:
+          LLMLAB_API_BASE_URL: ${{ secrets.LLMLAB_API_BASE_URL || secrets.LLMLAB_API_BASE }}
+          LLMLAB_API_KEY: ${{ secrets.LLMLAB_API_KEY }}
+          LLMLAB_TENANT_ID: ${{ secrets.LLMLAB_TENANT_ID }}
+        run: python tools/client/smoke_validate_contract.py
+
+      - name: Upload evidence artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: llmlab-evidence
+          path: .llmlab_artifacts/**
+          if-no-files-found: ignore
+
+      - name: Skip note (no secrets)
+        if: ${{ !(secrets.LLMLAB_API_KEY != '' && secrets.LLMLAB_TENANT_ID != '' && (secrets.LLMLAB_API_BASE_URL != '' || secrets.LLMLAB_API_BASE != '')) }}
+        run: |
+          echo "LLMLAB_API_BASE_URL (or legacy LLMLAB_API_BASE) / LLMLAB_API_KEY / LLMLAB_TENANT_ID secrets not set; skipping API gates."
+          echo "This workflow is intentionally non-blocking for forks/PRs without secrets."
