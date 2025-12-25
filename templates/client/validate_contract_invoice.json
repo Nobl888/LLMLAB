@@ -1,4 +1,5 @@
 {
+  "template_id": "no_pii_guard_v1",
   "baseline_output": {
     "invoice_id": "INV-1",
     "total": 123.45,
@@ -17,17 +18,8 @@
       {"sku": "B-2", "qty": 1, "unit_price": 103.45}
     ]
   },
-  "contract": {
-    "schema_version": "1.0",
-    "rules": [
-      {"id": "inv.invoice_id.exists", "type": "exists", "path": "invoice_id"},
-      {"id": "inv.currency.allowed", "type": "in", "path": "currency", "allowed": ["USD", "EUR", "GBP"]},
-      {"id": "inv.total.type", "type": "type_is", "path": "total", "expected": "number"},
-      {"id": "inv.total.nonneg", "type": "range", "path": "total", "min": 0}
-    ]
-  },
   "test_data": {
-    "suite": "template_invoice_contract_v1"
+    "suite": "template_no_pii_guard_v1"
   },
   "include_details": false,
   "api_version": "1.0"

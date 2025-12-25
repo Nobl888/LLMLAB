@@ -55,27 +55,20 @@ curl -sS "$LLMLAB_API_BASE_URL/health" | cat
 
 Expected: JSON with `status`/service metadata.
 
-## 2) Happy-path validate (hosted-safe contract mode)
+## 2) Happy-path validate (hosted-safe contract templates)
 
 This does **no code execution** on the service.
 
 ```bash
-curl -sS -X POST "$LLMLAB_API_BASE_URL/api/validate" \
+curl -sS -X POST "$LLMLAB_API_BASE_URL/api/contracts/validate" \
   -H "Authorization: Bearer $LLMLAB_API_KEY" \
   -H "X-Tenant-ID: $LLMLAB_TENANT_ID" \
   -H "Content-Type: application/json" \
   -d '{
+    "template_id": "no_pii_guard_v1",
     "baseline_output": {"invoice_id":"INV-1","total":123.45,"currency":"EUR"},
     "candidate_output": {"invoice_id":"INV-1","total":123.45,"currency":"EUR"},
-    "contract": {
-      "schema_version": "1.0",
-      "rules": [
-        {"id":"inv.invoice_id.exists","type":"exists","path":"invoice_id"},
-        {"id":"inv.total.type","type":"type_is","path":"total","expected":"number"},
-        {"id":"inv.total.nonneg","type":"range","path":"total","min":0}
-      ]
-    },
-    "test_data": {"suite":"smoke_contract"},
+    "test_data": {"suite":"smoke_contract_templates"},
     "include_details": false,
     "api_version": "1.0"
   }' | cat
@@ -98,10 +91,10 @@ bash scripts/run_validate_contract.sh templates/client/validate_contract_invoice
 ### 3a) Missing tenant header
 
 ```bash
-curl -sS -X POST "$LLMLAB_API_BASE_URL/api/validate" \
+curl -sS -X POST "$LLMLAB_API_BASE_URL/api/contracts/validate" \
   -H "Authorization: Bearer $LLMLAB_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"baseline_output":{},"candidate_output":{},"api_version":"1.0"}' | cat
+  -d '{"template_id":"no_pii_guard_v1","baseline_output":{},"candidate_output":{},"api_version":"1.0"}' | cat
 ```
 
 Expected: error about missing `X-Tenant-ID`.
@@ -109,11 +102,11 @@ Expected: error about missing `X-Tenant-ID`.
 ### 3b) Wrong tenant id
 
 ```bash
-curl -sS -X POST "$LLMLAB_API_BASE_URL/api/validate" \
+curl -sS -X POST "$LLMLAB_API_BASE_URL/api/contracts/validate" \
   -H "Authorization: Bearer $LLMLAB_API_KEY" \
   -H "X-Tenant-ID: 00000000-0000-0000-0000-000000000000" \
   -H "Content-Type: application/json" \
-  -d '{"baseline_output":{},"candidate_output":{},"api_version":"1.0"}' | cat
+  -d '{"template_id":"no_pii_guard_v1","baseline_output":{},"candidate_output":{},"api_version":"1.0"}' | cat
 ```
 
 Expected: `TENANT_MISMATCH` (403).
@@ -121,10 +114,10 @@ Expected: `TENANT_MISMATCH` (403).
 ### 3c) Missing/invalid API key
 
 ```bash
-curl -sS -X POST "$LLMLAB_API_BASE_URL/api/validate" \
+curl -sS -X POST "$LLMLAB_API_BASE_URL/api/contracts/validate" \
   -H "X-Tenant-ID: $LLMLAB_TENANT_ID" \
   -H "Content-Type: application/json" \
-  -d '{"baseline_output":{},"candidate_output":{},"api_version":"1.0"}' | cat
+  -d '{"template_id":"no_pii_guard_v1","baseline_output":{},"candidate_output":{},"api_version":"1.0"}' | cat
 ```
 
 Expected: stealth 404 (route appears not found).

@@ -82,6 +82,20 @@ if os.getenv("ENABLE_FIXTURE_UPLOAD", "false").lower() == "true":
     from api_validation.public.routes.fixtures import router as fixtures_router
     app.include_router(fixtures_router)
 
+# Hosted-safe contract templates + evidence verification are safe to expose in hosted mode.
+if os.getenv("ENABLE_CONTRACTS_API", "true").lower() == "true":
+    from api_validation.public.routes.contracts import router as contracts_router
+    app.include_router(contracts_router)
+
+if os.getenv("ENABLE_EVIDENCE_API", "true").lower() == "true":
+    from api_validation.public.routes.evidence import router as evidence_router
+    app.include_router(evidence_router)
+
+# Ensemble routes can be enabled explicitly (may involve code execution depending on configuration).
+if os.getenv("ENABLE_ENSEMBLE_API", "false").lower() == "true":
+    from api_validation.public.routes.ensemble import router as ensemble_router
+    app.include_router(ensemble_router)
+
 @app.get("/")
 def root():
     return {"name": "LLMlab Validation API", "status": "running"}

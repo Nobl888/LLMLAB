@@ -21,7 +21,7 @@ if [[ ! -f "${payload_path}" ]]; then
   exit 1
 fi
 
-url="${base_url%/}/api/validate"
+url="${base_url%/}/api/contracts/validate"
 
 curl -sS -X POST "${url}" \
   -H "Authorization: Bearer ${LLMLAB_API_KEY}" \

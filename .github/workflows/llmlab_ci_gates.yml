@@ -49,8 +49,10 @@ jobs:
           python -m compileall -q api_validation tools
           python -c "import api_validation.public.routes.health"
           python -c "import api_validation.public.routes.validate"
+          python -c "import api_validation.public.routes.contracts"
+          python -c "import api_validation.public.routes.evidence"
 
-      - name: Live smoke gate (/api/validate)
+      - name: Live smoke gate (/api/contracts/validate)
         if: ${{ secrets.LLMLAB_API_KEY != '' && secrets.LLMLAB_TENANT_ID != '' && (secrets.LLMLAB_API_BASE_URL != '' || secrets.LLMLAB_API_BASE != '') }}
         env:
           LLMLAB_API_BASE_URL: ${{ secrets.LLMLAB_API_BASE_URL || secrets.LLMLAB_API_BASE }}

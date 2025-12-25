@@ -101,12 +101,78 @@ def require_tenant_match(
     return {"tenant_id": auth["tenant_id"], "scopes": auth["scopes"]}
 
 
+def _resolve_fixture_storage_path(*, tenant_id: str, fixture_id: str) -> str:
+    """Resolve a fixture_id to a server-side storage path.
+
+    This is intended for internal use by hosted-safe endpoints that accept fixture_id.
+    """
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        raise HTTPException(status_code=503, detail="DB not configured")
+
+    with psycopg.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select storage_path, status
+                from fixtures
+                where id = %s and tenant_id = %s
+                """,
+                (str(fixture_id), str(tenant_id)),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "FIXTURE_NOT_FOUND", "message": "Fixture not found"},
+        )
+
+    storage_path, fixture_status = row
+    if fixture_status not in ("active", "uploaded"):
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "FIXTURE_NOT_FOUND", "message": "Fixture not found"},
+        )
+
+    return str(storage_path)
+
+
 def compute_hash(data: dict) -> str:
     """Compute SHA256 hash of a data dict."""
     if data is None:
         data = {}
     data_str = json.dumps(data, sort_keys=True, default=str)
     return "sha256:" + hashlib.sha256(data_str.encode()).hexdigest()[:12]
+
+
+def _safe_hash_str(value: str | None) -> str | None:
+    """Hash a string value for logs/evidence without exposing the raw value."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    return compute_hash({"v": s})
+
+
+def _scopes_allow_details(scopes: str | None) -> bool:
+    """Return True if the key scopes allow verbose/details responses."""
+    if not scopes:
+        return False
+    normalized = [p.strip().lower() for p in scopes.replace(";", ",").replace(" ", ",").split(",") if p.strip()]
+    allow = {"details", "verbose", "debug"}
+    return any(s in allow for s in normalized)
+
+
+def _details_enforcement_mode() -> str:
+    """Policy for include_details when the key lacks the right scope.
+
+    - soft: ignore include_details (default)
+    - strict: return 403 DETAILS_NOT_ALLOWED
+    """
+    mode = (os.getenv("DETAILS_ENFORCEMENT") or os.getenv("DETAILS_ENFORCEMENT_MODE") or "soft").strip().lower()
+    return mode if mode in {"soft", "strict"} else "soft"
 
 
 def _get_kpi_config(kpi_type: str):
