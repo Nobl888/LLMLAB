@@ -29,6 +29,17 @@ class CreateKeyResponse(BaseModel):
     tenant_id: str
 
 
+class BootstrapTenantRequest(BaseModel):
+    tenant_name: Optional[str] = ""
+    scopes: Optional[str] = ""
+
+
+class BootstrapTenantResponse(BaseModel):
+    tenant_id: str
+    api_key: str
+    key_prefix: str
+
+
 @router.post("/", response_model=CreateKeyResponse, status_code=status.HTTP_201_CREATED)
 def create_api_key(req: CreateKeyRequest):
     """
@@ -64,3 +75,46 @@ def create_api_key(req: CreateKeyRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create key: {str(e)}")
+
+
+@router.post("/bootstrap", response_model=BootstrapTenantResponse, status_code=status.HTTP_201_CREATED)
+def bootstrap_tenant(req: BootstrapTenantRequest) -> BootstrapTenantResponse:
+    """Create a new tenant + issue an API key (admin-only).
+
+    This is intentionally:
+    - smoke-key gated (stealth 404 without X-Smoke-Key)
+    - hidden from OpenAPI (router include_in_schema=False)
+    - minimal (no user system)
+
+    Use this for initial client testing when you don't yet have a tenant_id.
+    """
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    tenant_id = str(uuid4())
+    tenant_name = (req.tenant_name or "").strip() or f"bootstrap:{tenant_id[:8]}"
+
+    api_key = f"llm_{secrets.token_urlsafe(32)}"
+    key_prefix = api_key[:12]
+    key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+    try:
+        with psycopg.connect(dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "insert into tenants (id, name, status) values (%s, %s, 'active')",
+                    (tenant_id, tenant_name),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO api_keys (id, tenant_id, key_prefix, key_hash, scopes, status)
+                    VALUES (%s, %s, %s, %s, %s, 'active')
+                    """,
+                    (str(uuid4()), tenant_id, key_prefix, key_hash, (req.scopes or "")),
+                )
+            conn.commit()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to bootstrap tenant: {str(e)}")
+
+    return BootstrapTenantResponse(tenant_id=tenant_id, api_key=api_key, key_prefix=key_prefix)
