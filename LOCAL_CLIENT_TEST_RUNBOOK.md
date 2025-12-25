@@ -87,6 +87,12 @@ Expected:
 - `evidence.baseline_hash` / `evidence.candidate_hash` / `evidence.test_data_hash` present
 - `recommendation` is one of APPROVE/REVIEW/REJECT
 
+Tip: you can also run a saved payload file via:
+
+```bash
+bash scripts/run_validate_contract.sh templates/client/validate_contract_invoice.json
+```
+
 ## 3) Negative tests (security controls)
 
 ### 3a) Missing tenant header

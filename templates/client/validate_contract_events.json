@@ -1,0 +1,26 @@
+{
+  "baseline_output": {
+    "events": [
+      {"event_id": "e-001", "timestamp": "2025-01-01T00:00:00Z", "type": "page_view"},
+      {"event_id": "e-002", "timestamp": "2025-01-01T00:00:10Z", "type": "purchase", "amount": 49.99}
+    ]
+  },
+  "candidate_output": {
+    "events": [
+      {"event_id": "e-001", "timestamp": "2025-01-01T00:00:00Z", "type": "page_view"},
+      {"event_id": "e-002", "timestamp": "2025-01-01T00:00:10Z", "type": "purchase", "amount": 49.99}
+    ]
+  },
+  "contract": {
+    "schema_version": "1.0",
+    "rules": [
+      {"id": "events.exists", "type": "exists", "path": "events"},
+      {"id": "events.type", "type": "type_is", "path": "events", "expected": "array"}
+    ]
+  },
+  "test_data": {
+    "suite": "template_events_contract_v1"
+  },
+  "include_details": false,
+  "api_version": "1.0"
+}
