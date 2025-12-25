@@ -137,14 +137,23 @@ if ENABLE_AUDIT_LOGGING:
 
 app.add_middleware(RequestIDMiddleware)
 
-# CORS middleware (adjust for your domain)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS is disabled by default (server-to-server API). Enable only if explicitly configured.
+cors_origins_raw = os.getenv("CORS_ALLOW_ORIGINS", "").strip()
+if cors_origins_raw:
+    cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+    allow_credentials = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
+
+    # Never allow credentials with wildcard origins.
+    if "*" in cors_origins:
+        allow_credentials = False
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=allow_credentials,
+        allow_methods=["*"] if os.getenv("CORS_ALLOW_METHODS") is None else [m.strip() for m in os.getenv("CORS_ALLOW_METHODS", "").split(",") if m.strip()],
+        allow_headers=["*"] if os.getenv("CORS_ALLOW_HEADERS") is None else [h.strip() for h in os.getenv("CORS_ALLOW_HEADERS", "").split(",") if h.strip()],
+    )
 
 # Include routes
 app.include_router(health.router)
