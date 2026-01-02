@@ -277,6 +277,8 @@ class RateLimitingMiddleware(BaseHTTPMiddleware):
         # Check rate limit
         limit = self.config.get_rate_limit_for_key(api_key_id)
 
+        monthly_quota_headers: Optional[dict] = None
+
         # Monthly quota (optional; Postgres-backed)
         if self.config.ENABLE_MONTHLY_QUOTAS:
             if not self._quota:
@@ -305,9 +307,15 @@ class RateLimitingMiddleware(BaseHTTPMiddleware):
                     pass
 
                 quota = self.config.get_monthly_quota_for_scopes(scopes)
+                reset_at = _next_month_start_epoch()
+                remaining = max(0, quota - used_after) if quota > 0 else 0
+                monthly_quota_headers = {
+                    "X-MonthlyQuota-Limit": str(quota),
+                    "X-MonthlyQuota-Used": str(used_after),
+                    "X-MonthlyQuota-Remaining": str(remaining),
+                    "X-MonthlyQuota-Reset": str(reset_at),
+                }
                 if quota > 0 and used_after > quota:
-                    reset_at = _next_month_start_epoch()
-                    remaining = max(0, quota - used_after)
                     return JSONResponse(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                         content={
@@ -322,12 +330,7 @@ class RateLimitingMiddleware(BaseHTTPMiddleware):
                                 "reset_at": reset_at,
                             }
                         },
-                        headers={
-                            "X-MonthlyQuota-Limit": str(quota),
-                            "X-MonthlyQuota-Used": str(used_after),
-                            "X-MonthlyQuota-Remaining": str(remaining),
-                            "X-MonthlyQuota-Reset": str(reset_at),
-                        },
+                        headers=monthly_quota_headers,
                     )
         
         if api_key_id and not self.limiter.is_allowed(api_key_id, limit):
@@ -369,6 +372,11 @@ class RateLimitingMiddleware(BaseHTTPMiddleware):
             response.headers["X-RateLimit-Limit"] = str(limit)
             response.headers["X-RateLimit-Remaining"] = str(remaining)
             response.headers["X-RateLimit-Reset"] = str(int(reset_time))
+
+        # Add monthly quota headers (if enabled and available)
+        if monthly_quota_headers:
+            for k, v in monthly_quota_headers.items():
+                response.headers[k] = v
         
         return response
     
