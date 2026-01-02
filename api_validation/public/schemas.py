@@ -79,6 +79,15 @@ class EvidencePack(BaseModel):
         description="Optional tenant context (hashed identifiers only)",
     )
 
+    # Coarse governance signals (safe by default)
+    topology: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Optional coarse topology indicator (e.g., diversity_bucket). "
+            "Must not contain algorithm-family identifiers or proprietary scoring details."
+        ),
+    )
+
     # Tamper-evident provenance (optional)
     signature_alg: Optional[str] = Field(
         None,

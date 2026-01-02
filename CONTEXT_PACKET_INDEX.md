@@ -4,6 +4,7 @@ This file is a “carry-forward” index to avoid losing critical context when y
 
 ## Dated snapshot index
 
+- [context/2727/CONTEXT_PACKET_INDEX_2727.md](context/2727/CONTEXT_PACKET_INDEX_2727.md) — dated reference snapshot (created 2025-12-27)
 - [context/2512/CONTEXT_PACKET_INDEX_2512.md](context/2512/CONTEXT_PACKET_INDEX_2512.md) — dated reference snapshot (created 2025-12-25)
 
 ## The short context packet (7 files)

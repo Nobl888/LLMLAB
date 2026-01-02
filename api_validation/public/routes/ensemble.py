@@ -38,6 +38,7 @@ from api_validation.public.routes.validate import (
     _details_enforcement_mode,
     compute_hash,
 )
+from api_validation.public.routes.topology import get_topology_indicator
 from api_validation.public.evidence_signing import sign_payload
 from api_validation.public.schemas import (
     ValidateResponse,
@@ -319,6 +320,7 @@ def validate_ensemble(
             recommendation=recommendation,
             config=safe_config,
             tenant_context=tenant_context,
+            topology=get_topology_indicator(),
         )
 
         payload_for_signing = evidence_pack.model_dump(mode="json")
@@ -448,6 +450,7 @@ def validate_ensemble(
             recommendation=recommendation,
             config=safe_config,
             tenant_context=tenant_context,
+            topology=get_topology_indicator(),
         )
 
         payload_for_signing = evidence_pack.model_dump(mode="json")
@@ -556,6 +559,7 @@ def validate_ensemble(
             recommendation=recommendation,
             config=safe_config,
             tenant_context=tenant_context,
+            topology=get_topology_indicator(),
         )
 
         payload_for_signing = evidence_pack.model_dump(mode="json")

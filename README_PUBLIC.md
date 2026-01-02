@@ -2,6 +2,9 @@ Make AI-generated code boringly reliable in domains where errors are expensive.
 
 Deterministic release gates for error-expensive workflows.
 
+> **Research-validated:** LLMLAB's Bayesian wind-tunnel methodology was independently validated by  
+> *"The Bayesian Geometry of Transformer Attention"* (arXiv:2512.22471, Dec 2025).
+
 ---
 
 ## 3-command onboarding (copy/paste)
@@ -74,7 +77,7 @@ The goal is to make regressions cheaper to catch and faster to resolve—helping
 
 ---
 
-## Two kits (today)
+## Three kits (today)
 
 ### 1) KPI Regression Kit (tabular → computed metrics)
 
@@ -93,6 +96,19 @@ Use when the question is: *“Is this output valid, stable, and safe to consume?
 - No code execution: it’s deterministic, fast, and broadly applicable.
 
 This kit is “high leverage” because many products (agents, config generators, extractors, pipelines) ultimately emit JSON.
+
+### 3) Bayes Wind-Tunnel Kit (probability reliability → truth-based gates)
+
+Use when the question is: *“Does this system behave like a probability engine, or does it become confident-but-wrong?”*
+
+- Runs **truth-based** synthetic suites where the correct belief update is known (not debatable).
+- Emits deterministic metrics (e.g., KL divergence vs analytic posterior, hidden-state NLL) plus PASS/FAIL.
+- Adds an exec-friendly guarantee: *posterior tracking under shift* can be tested without customer data.
+
+This repo’s offline CI gates include:
+- HMM filtering (synthetic Bayes ground truth)
+- HMM **OOD-shift** filtering (known change-point)
+- Coin-flip Beta-Bernoulli (closed-form Bayesian updating)- **Bijection elimination** (combinatorial posterior tracking — from arXiv:2512.22471)- Telco churn calibration check (real labeled data; Brier/NLL)
 
 For a developer map of kits + templates: [KIT_CATALOG.md](KIT_CATALOG.md)
 

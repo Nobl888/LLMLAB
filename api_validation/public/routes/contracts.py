@@ -22,6 +22,7 @@ from api_validation.public.routes.validate import (
     _scopes_allow_details,
     _details_enforcement_mode,
 )
+from api_validation.public.routes.topology import get_topology_indicator
 from api_validation.public.evidence_signing import sign_payload
 from api_validation.public.schemas import (
     ContractTemplateValidateRequest,
@@ -288,6 +289,7 @@ def validate_with_contract_template(
         recommendation=recommendation,
         config=safe_config,
         tenant_context=tenant_context,
+        topology=get_topology_indicator(),
     )
 
     payload_for_signing = evidence_pack.model_dump(mode="json")

@@ -20,6 +20,43 @@ create table if not exists api_keys (
   revoked_at timestamptz null,
   last_used_at timestamptz null
 );
+
+create table if not exists fixtures (
+  id uuid primary key,
+  tenant_id uuid not null references tenants(id),
+  storage_path text not null,
+  sha256 text not null,
+  size_bytes bigint not null,
+  original_filename text not null,
+  content_type text not null,
+  status text not null default 'active',
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz null
+);
+
+create table if not exists signup_events (
+  id uuid primary key,
+  created_at timestamptz not null default now(),
+  ip_hash text not null,
+  email_hash text not null
+);
+
+create table if not exists api_key_monthly_usage (
+  key_hash text not null,
+  month text not null,
+  request_count bigint not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (key_hash, month)
+);
+
+create index if not exists idx_signup_events_created_at on signup_events(created_at);
+create index if not exists idx_signup_events_ip_hash on signup_events(ip_hash);
+create index if not exists idx_signup_events_email_hash on signup_events(email_hash);
+
+create index if not exists idx_api_key_monthly_usage_month on api_key_monthly_usage(month);
+
+create index if not exists idx_fixtures_tenant_id on fixtures(tenant_id);
+create index if not exists idx_fixtures_tenant_status on fixtures(tenant_id, status);
 """
 
 def init_db_if_enabled() -> None:

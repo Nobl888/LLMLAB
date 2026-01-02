@@ -16,6 +16,7 @@ Exit codes:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -54,6 +55,12 @@ def main() -> int:
     ]
     missing = [name for name, val in required if not val]
 
+    require_topology = (os.getenv("LLMLAB_REQUIRE_TOPOLOGY") or "").strip().lower() in {"1", "true", "yes"}
+    topology = evidence_pack.get("topology") if isinstance(evidence_pack, dict) else None
+    topology_bucket = None
+    if isinstance(topology, dict):
+        topology_bucket = topology.get("diversity_bucket")
+
     print(json.dumps({"status": status, "trace_id": trace_id, "recommendation": rec}, indent=2))
 
     if status != "ok":
@@ -62,6 +69,17 @@ def main() -> int:
     if missing:
         print(f"ERROR: missing required fields: {missing}", file=sys.stderr)
         return 1
+
+    if require_topology:
+        if not isinstance(topology, dict):
+            print("ERROR: LLMLAB_REQUIRE_TOPOLOGY is set but evidence_pack.topology is missing", file=sys.stderr)
+            return 1
+        if str(topology_bucket).upper() not in {"LOW", "MEDIUM", "HIGH"}:
+            print(
+                "ERROR: LLMLAB_REQUIRE_TOPOLOGY is set but evidence_pack.topology.diversity_bucket is invalid",
+                file=sys.stderr,
+            )
+            return 1
 
     return 0
 

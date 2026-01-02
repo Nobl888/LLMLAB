@@ -34,7 +34,7 @@ For an exec-friendly one-pager you can forward internally, see [EXEC_BRIEF_BASEL
 - **Policy Gates (compliance-as-code):** validate that code/config artifacts comply with a deterministic policy (e.g., ban dynamic exec, ban network imports), producing auditable evidence per PR.
 
 ### Why it wins
-- **Decision artifact, not just logs:** each run emits an evidence pack you can archive and re-verify later.
+- **Decision artifact beyond logs:** each run emits an evidence pack you can archive and re-verify later.
 - **Minimization-first:** evidence packs can be hash-only while staying verifiable.
 - **CI-native:** designed for GitHub Actions calling a hosted service (Render).
 
@@ -66,6 +66,167 @@ You need two values:
 How you get them depends on rollout mode:
 - Early partners: provisioned by the operator (recommended during onboarding)
 - Self-serve (optional): available via `POST /api/signup` when enabled on the service
+
+### Step 1.5: Privacy-first onboarding (recommended)
+
+If your inputs may contain sensitive data (PII, customer records, internal identifiers), the safest workflow is:
+
+1) **Run your pipeline locally (or in your own CI)**
+- LLMLAB requires zero access to your source system.
+
+2) **Minimize what you send**
+- Prefer sending *derived artifacts* (summaries, aggregates, hashes, schema/shape) instead of raw rows.
+- If you upload raw CSV contents, you are explicitly sending those rows to the hosted service.
+
+3) **Add a local pre-processor**
+- Strip or mask sensitive columns before sending anything.
+- Example outputs that are usually safe to send: row/column counts, per-column null rates, type inference, bounded samples, deterministic hashes.
+
+4) **Use a dry-run to prove what will be sent**
+- Run your client with a `--dry-run` option that prints the target URL and payload shape and writes the outbound JSON to a local file.
+- The goal is “trust but verify”: your engineers can inspect the outbound payload before any network call.
+
+5) **Enforce a PII guard as a contract**
+- Use the built-in contract template `no_pii_guard_v1` so the service will fail the request if the JSON artifact appears to contain PII-like patterns.
+- This is best-effort (pattern-based), and is most effective when paired with a local redaction step.
+
+#### Copy/paste: minimal customer script skeleton (local preprocess + dry-run)
+
+This example reads a CSV locally, drops likely-sensitive columns, builds a small JSON “profile”, and either:
+- writes what it *would* send (`--dry-run`), or
+- sends the profile to `/api/contracts/validate`.
+
+```python
+#!/usr/bin/env python3
+"""privacy_first_csv_gate.py
+
+Local-only preprocessing: produces a small JSON profile and optionally sends it.
+
+Usage:
+  python privacy_first_csv_gate.py --csv ./data.csv --dry-run
+  python privacy_first_csv_gate.py --csv ./data.csv
+
+Required env:
+  LLMLAB_API_BASE_URL
+  LLMLAB_API_KEY
+  LLMLAB_TENANT_ID
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import os
+import sys
+import urllib.request
+
+
+DROP_COLUMNS = {
+  "name",
+  "first_name",
+  "last_name",
+  "email",
+  "phone",
+  "ssn",
+  "address",
+}
+
+
+def require_env(name: str) -> str:
+  v = os.getenv(name)
+  if v is None or v == "":
+    raise SystemExit(f"Missing env var: {name}")
+  return v
+
+
+def build_profile(csv_path: str) -> dict:
+  with open(csv_path, "r", newline="", encoding="utf-8") as f:
+    reader = csv.DictReader(f)
+    if reader.fieldnames is None or len(reader.fieldnames) == 0:
+      raise SystemExit("CSV has no header row")
+
+    kept: list[str] = []
+    for c in reader.fieldnames:
+      if c in DROP_COLUMNS:
+        continue
+      kept.append(c)
+    nulls = {c: 0 for c in kept}
+    rows = 0
+    for row in reader:
+      rows += 1
+      for c in kept:
+        v = (row.get(c) or "").strip()
+        if v == "":
+          nulls[c] += 1
+
+  return {
+    "schema_version": "1.0",
+    "source": {"filename": os.path.basename(csv_path)},
+    "shape": {"rows": rows, "cols": len(kept), "columns": kept},
+    "nulls": {"by_column": nulls},
+    "note": "This is a minimized CSV profile (no raw rows).",
+  }
+
+
+def post_contract_validate(payload: dict) -> dict:
+  base = require_env("LLMLAB_API_BASE_URL").rstrip("/")
+  api_key = require_env("LLMLAB_API_KEY")
+  tenant_id = require_env("LLMLAB_TENANT_ID")
+
+  url = base + "/api/contracts/validate"
+  body = json.dumps(
+    {
+      "template_id": "no_pii_guard_v1",
+      "baseline_output": {},
+      "candidate_output": payload,
+      "include_details": False,
+      "api_version": "1.0",
+      "test_data": {"suite": "privacy_first_csv_profile"},
+    }
+  ).encode("utf-8")
+
+  req = urllib.request.Request(
+    url=url,
+    method="POST",
+    data=body,
+    headers={
+      "Content-Type": "application/json",
+      "Authorization": f"Bearer {api_key}",
+      "X-Tenant-ID": tenant_id,
+    },
+  )
+  with urllib.request.urlopen(req, timeout=30) as resp:
+    raw = resp.read().decode("utf-8")
+    return json.loads(raw) if raw else {}
+
+
+def main(argv: list[str]) -> int:
+  ap = argparse.ArgumentParser()
+  ap.add_argument("--csv", required=True, help="Path to local CSV")
+  ap.add_argument("--dry-run", action="store_true", help="Dry-run: print outbound payload")
+  args = ap.parse_args(argv)
+
+  profile = build_profile(args.csv)
+
+  if args.dry_run:
+    out = {
+      "would_post": "/api/contracts/validate",
+      "template_id": "no_pii_guard_v1",
+      "candidate_output": profile,
+      "note": "Inspect this payload; it should contain no PII or raw rows.",
+    }
+    print(json.dumps(out, indent=2, sort_keys=True))
+    return 0
+
+  resp = post_contract_validate(profile)
+  print(json.dumps(resp, indent=2))
+  return 0
+
+
+if __name__ == "__main__":
+  raise SystemExit(main(sys.argv[1:]))
+```
 
 ### Step 2: Make Your First Request
 
@@ -158,6 +319,66 @@ curl -X POST <YOUR_API_BASE>/api/validate \
 
 ---
 
+## GitHub Actions quickstart (copy/paste)
+
+This is the fastest path for early engineers: wire the hosted-safe gate into PRs with one workflow.
+
+### What you add
+
+1) **Enable the workflow**
+- This repo ships a ready workflow: `.github/workflows/llmlab_ci_gates.yml`.
+- It always runs offline gates (syntax/import). It runs a live API smoke only when secrets exist.
+
+2) **Add 3 repository secrets (for live smoke)**
+- `LLMLAB_API_BASE_URL` (example: `https://llmlab-t6zg.onrender.com`)
+- `LLMLAB_API_KEY` (starts with `llm_...`)
+- `LLMLAB_TENANT_ID` (UUID)
+
+Notes:
+- If secrets are unset (forks/PRs), the workflow will skip the live smoke gate and remain non-blocking by design.
+- The live smoke calls `POST /api/contracts/validate` using a hosted-safe payload.
+
+### What “success” looks like
+
+- PR check `llmlab-ci-gates` is green.
+- Evidence artifacts (if any) are uploaded as a build artifact under `llmlab-evidence`.
+
+---
+
+## Compliance control layer (positioning without over-claiming)
+
+Teams in regulated environments often need a repeatable control that answers:
+- *What changed?*
+- *What checks ran?*
+- *Who/what approved it?*
+- *Can we prove integrity after the fact?*
+
+LLMLAB is designed to support that workflow by producing **deterministic evidence** per gate:
+
+- **Minimization-first inputs:** you can submit JSON artifacts/summaries/hashes instead of raw datasets.
+- **Deterministic decision + summary:** `pass_rate`, `failed_checks`, `recommendation`.
+- **Evidence pack:** a portable record you can attach to PRs/change tickets.
+- **Optional tamper detection:** if evidence signing is configured (`EVIDENCE_SIGNING_KEY`), signatures can be verified later.
+
+If you are evaluating governance requirements (including upcoming AI governance regimes), treat this as a **technical control primitive** you can map to your internal policies (change control, testing evidence, traceability). For legal interpretation and formal certifications, coordinate with your counsel and assurance teams; LLMLAB provides the technical evidence layer.
+
+### South Korea: AI Basic Act (effective Jan 2026) — how LLMLAB fits
+
+Based on public summaries (and your internal onboarding needs), the AI Basic Act emphasizes risk-based oversight for “high-impact” systems, transparency for generative AI, and documentation/controls.
+
+LLMLAB fits as a **control layer** for engineering teams because it can help you operationalize parts of that program in CI:
+
+- **Documentation + retention-ready artifacts:** each gate run returns an `evidence_pack` you can archive with the PR/change ticket (hash-first, portable).
+- **Traceability (“what ran, when, on what inputs”):** evidence includes stable fingerprints of baseline/candidate/test inputs plus deterministic summaries.
+- **Transparency/labeling enforcement for GenAI outputs:** you can treat “labels required” as a contract requirement.
+  - Example: enforce that responses include fields like `ai_generated: true`, `content_label`, `model_id`, `generated_at`, `disclosure_version`.
+  - Watermark generation is handled by your pipeline; LLMLAB validates the presence of required labeling/disclosure metadata.
+- **Risk check evidence (high-impact workflows):** you can require a structured “risk check result” JSON artifact (e.g., `risk_assessment.status`, `hazards_checked`, `mitigations_applied`) and gate changes on that shape.
+
+Scope clarity (keeps positioning precise):
+- High-impact classification and legal obligations are determined by regulators and your compliance program.
+- LLMLAB provides deterministic validation + evidence artifacts you can map to those controls.
+
 ## Two hosted-safe request profiles (recommended)
 
 These profiles preserve the hosted-safe posture: customers run code/data locally and submit only structured artifacts.
@@ -171,7 +392,8 @@ These profiles preserve the hosted-safe posture: customers run code/data locally
 - **KPI kit execution mode (self-hosted / private only):** send `baseline_kpi_path`, `candidate_kpi_path`, and `fixture_id`/`fixture_path`.
   - This requires server-side code execution to be explicitly enabled (see `ALLOW_KPI_CODE_EXECUTION`).
 
-Note: a draft “contract/invariants inside `/api/validate` + `evidence_pack` response bundle” exists as preserved early work on branch `review/stash0-main`, but it is not deployed on `main`.
+Note: a draft “contract/invariants inside `/api/validate` + `evidence_pack` response bundle” exists as preserved early work on branch `review/stash0-main`, and it stays separate from the deployed `main`.
+Note: a draft “contract/invariants inside `/api/validate` + `evidence_pack` response bundle” exists as preserved early work on branch `review/stash0-main`, and remains outside the deployed `main` branch.
 
 ### Profile A: Extraction JSON gate (schema + invariants + optional drift)
 
@@ -305,7 +527,7 @@ If you want the lowest-friction “see it working in minutes” path:
 | `risk.confidence` | number (0–100) | How confident we are in this assessment (%) |
 | `summary.pass_rate` | number (0–1) | Fraction of test cases that matched (0–1) |
 | `summary.total_checks` | number | How many checks we ran |
-| `summary.failed_checks` | number | How many checks did not match baseline |
+| `summary.failed_checks` | number | How many checks differed from baseline |
 | `recommendation` | string | `APPROVE` \| `APPROVE_WITH_MONITORING` \| `REVIEW` \| `REJECT` |
 | `evidence.baseline_hash` | string | SHA256 hash of your baseline (for audit) |
 | `evidence.candidate_hash` | string | SHA256 hash of your candidate code |
@@ -320,7 +542,7 @@ If you want the lowest-friction “see it working in minutes” path:
 | `APPROVE` | Very safe to deploy | Deploy immediately |
 | `APPROVE_WITH_MONITORING` | Safe, but watch performance | Deploy, monitor metrics |
 | `REVIEW` | Needs review before deploy | Run manual tests, check with team |
-| `REJECT` | High risk, don't deploy | Investigate differences, iterate candidate |
+| `REJECT` | High risk | Hold deployment; investigate differences and iterate |
 
 ---
 
@@ -515,11 +737,18 @@ Notes:
 
 ### Q: What happens to my code/data?
 
-**A:** In the recommended hosted-safe posture, you run your code and queries in your own CI and submit only structured artifacts (often small JSON summaries). The service returns a decision plus an evidence pack that can be hash-only. Raw datasets are not required.
+**A:** In the recommended hosted-safe posture, you run your code and queries in your own environment and submit only structured artifacts (often small JSON summaries). The service returns a decision plus an evidence pack that can be hash-only.
+
+For sensitive datasets:
+- Add a local pre-processor that drops/masks PII columns.
+- Use a dry-run mode in your client to print/record the outbound payload *before* sending.
+- Prefer sending summaries/hashes rather than raw rows.
+
+Contract-template onboarding works with JSON artifacts; raw datasets are optional.
 
 ### Q: Can I use this for compliance?
 
-**A:** It’s commonly used to support change-control and audit workflows by producing machine-verifiable evidence per PR/release. It does not claim legal compliance or certifications by itself.
+**A:** It’s commonly used to support change-control and audit workflows by producing machine-verifiable evidence per PR/release. Legal compliance determinations and certifications are handled by your governance program and assessors; LLMLAB provides evidence and validation to support that work.
 
 ### Q: What if you shut down?
 

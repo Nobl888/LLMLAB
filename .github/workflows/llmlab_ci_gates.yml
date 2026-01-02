@@ -53,19 +53,93 @@ jobs:
           python -c "import api_validation.public.routes.evidence"
           python -c "import domain_kits.contract_invariants.engine"
 
-      - name: Live smoke gate (/api/contracts/validate)
+      - name: Offline oracle gate (quant kit)
+        run: |
+          set -euo pipefail
+          # Keep this gate self-contained and export-safe:
+          # - Build the oracle for a single indicator
+          # - Validate against a small known-good candidate set
+          python tools/qqq_canonical_indicators/build_oracles.py --input qqq_clean.csv --indicator composite_v1
+          python tools/qqq_canonical_indicators/runner.py --indicator composite_v1 --candidates-dir tasks/qqq_canonical_indicators/example_candidates --tolerance 1e-12
+
+      - name: Offline Bayes wind-tunnel gates (HMM)
+        run: |
+          set -euo pipefail
+          python tools/wind_tunnel_bayes/ci_gate_hmm.py
+
+      - name: Offline Bayes wind-tunnel gates (HMM OOD-shift)
+        run: |
+          set -euo pipefail
+          python tools/wind_tunnel_bayes/ci_gate_hmm_ood_shift.py
+
+      - name: Offline Bayes wind-tunnel gates (Coin)
+        run: |
+          set -euo pipefail
+          python tools/wind_tunnel_bayes/ci_gate_coin.py
+
+      - name: Offline Bayes wind-tunnel gates (Bijection Elimination)
+        run: |
+          set -euo pipefail
+          python tools/wind_tunnel_bayes/ci_gate_bijection.py
+
+      - name: Offline calibration wind-tunnel gates (Telco churn)
+        run: |
+          set -euo pipefail
+          python tools/wind_tunnel_tabular/ci_gate_telco_churn.py
+
+      - name: Live health check (optional)
+        if: ${{ (secrets.LLMLAB_API_BASE_URL != '' || secrets.LLMLAB_API_BASE != '') }}
+        env:
+          LLMLAB_API_BASE_URL: ${{ secrets.LLMLAB_API_BASE_URL || secrets.LLMLAB_API_BASE }}
+          LLMLAB_REQUIRE_DB_HEALTH: ${{ vars.LLMLAB_REQUIRE_DB_HEALTH || secrets.LLMLAB_REQUIRE_DB_HEALTH }}
+        run: |
+          set -euo pipefail
+          BASE_URL="${LLMLAB_API_BASE_URL%/}"
+          echo "Health check: $BASE_URL/health"
+          RESP=$(curl -sS --fail --max-time 10 "$BASE_URL/health" || echo '{"status":"unreachable"}')
+          echo "$RESP" | python -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('status')=='ok' else 1)"
+          echo "Health check passed"
+
+          require_db="${LLMLAB_REQUIRE_DB_HEALTH:-}"
+          require_db_lower=$(python -c "import os; v=os.getenv('LLMLAB_REQUIRE_DB_HEALTH',''); print(v.strip().lower())")
+          if [ "$require_db_lower" = "1" ] || [ "$require_db_lower" = "true" ] || [ "$require_db_lower" = "yes" ]; then
+            echo "DB health check (required): $BASE_URL/health/db"
+            DB_RESP=$(curl -sS --fail --max-time 10 "$BASE_URL/health/db" || echo '{"ok":false}')
+            echo "$DB_RESP" | python -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('ok') is True else 1)"
+            echo "DB health check passed"
+          else
+            echo "DB health check skipped (set LLMLAB_REQUIRE_DB_HEALTH=true to enforce)"
+          fi
+
+      - name: Live smoke gates (contract + ensemble)
         if: ${{ secrets.LLMLAB_API_KEY != '' && secrets.LLMLAB_TENANT_ID != '' && (secrets.LLMLAB_API_BASE_URL != '' || secrets.LLMLAB_API_BASE != '') }}
         env:
           LLMLAB_API_BASE_URL: ${{ secrets.LLMLAB_API_BASE_URL || secrets.LLMLAB_API_BASE }}
           LLMLAB_API_KEY: ${{ secrets.LLMLAB_API_KEY }}
           LLMLAB_TENANT_ID: ${{ secrets.LLMLAB_TENANT_ID }}
-        run: python tools/client/smoke_validate_contract.py
+          LLMLAB_REQUIRE_TOPOLOGY: ${{ vars.LLMLAB_REQUIRE_TOPOLOGY || secrets.LLMLAB_REQUIRE_TOPOLOGY }}
+        run: |
+          python tools/client/smoke_validate_contract.py
+          python tools/client/smoke_validate_ensemble.py
 
-      - name: Upload evidence artifacts
+      - name: Upload evidence artifacts (safe)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: llmlab-evidence
+          path: |
+            .llmlab_artifacts/**
+            # Exclude internal research / candidate corpora by default.
+            !.llmlab_artifacts/qqq_canonical_indicators/**
+            !.llmlab_artifacts/import_llm_markdown_backups/**
+            !.llmlab_artifacts/reply_*.md
+          if-no-files-found: ignore
+
+      - name: Upload internal research artifacts (opt-in)
+        if: ${{ always() && vars.LLMLAB_UPLOAD_INTERNAL_ARTIFACTS == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: llmlab-internal-artifacts
           path: .llmlab_artifacts/**
           if-no-files-found: ignore
 
