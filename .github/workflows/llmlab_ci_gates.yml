@@ -24,6 +24,14 @@ jobs:
           if [ -n "${{ secrets.LLMLAB_API_KEY }}" ]; then echo "- LLMLAB_API_KEY: set"; else echo "- LLMLAB_API_KEY: MISSING"; fi
           if [ -n "${{ secrets.LLMLAB_TENANT_ID }}" ]; then echo "- LLMLAB_TENANT_ID: set"; else echo "- LLMLAB_TENANT_ID: MISSING"; fi
 
+          # Set env flags for later if: conditions (secrets can't be used directly in if:)
+          HAS_BASE="false"
+          HAS_ALL="false"
+          if [ -n "${{ secrets.LLMLAB_API_BASE_URL }}" ] || [ -n "${{ secrets.LLMLAB_API_BASE }}" ]; then HAS_BASE="true"; fi
+          if [ -n "${{ secrets.LLMLAB_API_KEY }}" ] && [ -n "${{ secrets.LLMLAB_TENANT_ID }}" ] && [ "$HAS_BASE" = "true" ]; then HAS_ALL="true"; fi
+          echo "HAS_API_BASE=$HAS_BASE" >> $GITHUB_ENV
+          echo "HAS_ALL_SECRETS=$HAS_ALL" >> $GITHUB_ENV
+
           # Extra guardrail: warn if someone points CI at localhost.
           BASE_URL="${{ secrets.LLMLAB_API_BASE_URL || secrets.LLMLAB_API_BASE }}"
           case "$BASE_URL" in
@@ -88,7 +96,7 @@ jobs:
           python tools/wind_tunnel_tabular/ci_gate_telco_churn.py
 
       - name: Live health check (optional)
-        if: ${{ (secrets.LLMLAB_API_BASE_URL != '' || secrets.LLMLAB_API_BASE != '') }}
+        if: ${{ env.HAS_API_BASE == 'true' }}
         env:
           LLMLAB_API_BASE_URL: ${{ secrets.LLMLAB_API_BASE_URL || secrets.LLMLAB_API_BASE }}
           LLMLAB_REQUIRE_DB_HEALTH: ${{ vars.LLMLAB_REQUIRE_DB_HEALTH || secrets.LLMLAB_REQUIRE_DB_HEALTH }}
@@ -112,7 +120,7 @@ jobs:
           fi
 
       - name: Live smoke gates (contract + ensemble)
-        if: ${{ secrets.LLMLAB_API_KEY != '' && secrets.LLMLAB_TENANT_ID != '' && (secrets.LLMLAB_API_BASE_URL != '' || secrets.LLMLAB_API_BASE != '') }}
+        if: ${{ env.HAS_ALL_SECRETS == 'true' }}
         env:
           LLMLAB_API_BASE_URL: ${{ secrets.LLMLAB_API_BASE_URL || secrets.LLMLAB_API_BASE }}
           LLMLAB_API_KEY: ${{ secrets.LLMLAB_API_KEY }}
@@ -144,7 +152,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Skip note (no secrets)
-        if: ${{ !(secrets.LLMLAB_API_KEY != '' && secrets.LLMLAB_TENANT_ID != '' && (secrets.LLMLAB_API_BASE_URL != '' || secrets.LLMLAB_API_BASE != '')) }}
+        if: ${{ env.HAS_ALL_SECRETS != 'true' }}
         run: |
           echo "LLMLAB_API_BASE_URL (or legacy LLMLAB_API_BASE) / LLMLAB_API_KEY / LLMLAB_TENANT_ID secrets not set; skipping API gates."
           echo "This workflow is intentionally non-blocking for forks/PRs without secrets."
