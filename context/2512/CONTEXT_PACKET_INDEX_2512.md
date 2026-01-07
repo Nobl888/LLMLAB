@@ -2,6 +2,39 @@
 
 Date reference: **2512** (created on 2025-12-25)
 
+## Addendum (2026-01-07) — GitHub Actions LIVE ✅
+
+**CI is fully operational on GitHub Actions.**
+
+| Milestone | Status |
+|-----------|--------|
+| Workflow triggers on push to `main` | ✅ |
+| GitHub Secrets configured | ✅ |
+| Offline Bayes wind-tunnel gates (HMM, coin, bijection) | ✅ |
+| Offline calibration gate (Telco churn) | ✅ |
+| Live health check (Render) | ✅ |
+| Live smoke gates (contract + ensemble) | ✅ |
+| Run #23 passed | ✅ |
+
+**Files added to LLMLAB repo:**
+- `tools/wind_tunnel_bayes/` — HMM, coin, bijection gates
+- `tools/wind_tunnel_tabular/` — Telco churn gate
+- `tools/client/smoke_validate_ensemble.py`
+- `README.md` — minimal, IP-safe public README
+
+**Workflow fixes applied:**
+- Added `push: branches: [main]` trigger
+- Fixed `secrets` in `if:` conditions (use env vars instead)
+- Increased health check timeout to 90s for Render cold start
+- Fixed telco CSV path (`telco_churn.csv` not `LLMLAB/telco_churn.csv`)
+
+**Secrets set in GitHub:**
+- `LLMLAB_API_BASE_URL` = `https://llmlab-t6zg.onrender.com`
+- `LLMLAB_API_KEY` = (set)
+- `LLMLAB_TENANT_ID` = (set)
+
+---
+
 ## Addendum (2025-12-26)
 
 - Live Render deploy is confirmed healthy and serving commit `333837615bd531a9b4605c02aa573e56a5bb950d` via `GET /health`.
