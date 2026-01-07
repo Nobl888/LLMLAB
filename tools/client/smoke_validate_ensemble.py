@@ -1,0 +1,90 @@
+"""Client-style smoke test for hosted-safe ensemble validation.
+
+- Uses stdlib-only HTTP client in tools/ci/llmlab_http.py
+- Exercises: Authorization + X-Tenant-ID + /api/ensemble/validate + evidence_pack
+
+Env vars:
+- LLMLAB_API_BASE_URL (preferred) or LLMLAB_API_BASE
+- LLMLAB_API_KEY
+- LLMLAB_TENANT_ID
+
+Optional env vars:
+- LLMLAB_REQUIRE_TOPOLOGY=true  (asserts evidence_pack.topology.diversity_bucket is present)
+
+Exit codes:
+- 0: request succeeded (status=ok)
+- 1: error
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+repo_root = Path(__file__).resolve().parents[2]
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+from tools.ci.llmlab_http import post_json
+
+
+def main() -> int:
+    payload = {
+        "suite_id": "superstore_kpi_profit_artifact_v1",
+        "baseline_output": {"profit_total": 123.45},
+        "candidate_output": {"profit_total": 123.45},
+        "include_details": False,
+        "api_version": "1.0",
+    }
+
+    resp = post_json("/api/ensemble/validate", payload)
+
+    status = str(resp.get("status") or "")
+    trace_id = resp.get("trace_id")
+    rec = resp.get("recommendation")
+    evidence = resp.get("evidence") or {}
+    evidence_pack = resp.get("evidence_pack") or {}
+
+    required = [
+        ("trace_id", trace_id),
+        ("evidence.baseline_hash", evidence.get("baseline_hash")),
+        ("evidence.candidate_hash", evidence.get("candidate_hash")),
+        ("evidence.test_data_hash", evidence.get("test_data_hash")),
+        ("evidence_pack.schema_version", evidence_pack.get("schema_version")),
+        ("evidence_pack.domain", evidence_pack.get("domain")),
+    ]
+    missing = [name for name, val in required if not val]
+
+    require_topology = (os.getenv("LLMLAB_REQUIRE_TOPOLOGY") or "").strip().lower() in {"1", "true", "yes"}
+    topology = evidence_pack.get("topology") if isinstance(evidence_pack, dict) else None
+    topology_bucket = None
+    if isinstance(topology, dict):
+        topology_bucket = topology.get("diversity_bucket")
+
+    print(json.dumps({"status": status, "trace_id": trace_id, "recommendation": rec}, indent=2))
+
+    if status != "ok":
+        print("ERROR: status != ok", file=sys.stderr)
+        return 1
+    if missing:
+        print(f"ERROR: missing required fields: {missing}", file=sys.stderr)
+        return 1
+
+    if require_topology:
+        if not isinstance(topology, dict):
+            print("ERROR: LLMLAB_REQUIRE_TOPOLOGY is set but evidence_pack.topology is missing", file=sys.stderr)
+            return 1
+        if str(topology_bucket).upper() not in {"LOW", "MEDIUM", "HIGH"}:
+            print(
+                "ERROR: LLMLAB_REQUIRE_TOPOLOGY is set but evidence_pack.topology.diversity_bucket is invalid",
+                file=sys.stderr,
+            )
+            return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
