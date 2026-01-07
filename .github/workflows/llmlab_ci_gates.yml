@@ -105,8 +105,8 @@ jobs:
         run: |
           set -euo pipefail
           BASE_URL="${LLMLAB_API_BASE_URL%/}"
-          echo "Health check: $BASE_URL/health"
-          RESP=$(curl -sS --fail --max-time 10 "$BASE_URL/health" || echo '{"status":"unreachable"}')
+          echo "Health check: $BASE_URL/health (timeout 90s for cold start)"
+          RESP=$(curl -sS --fail --max-time 90 "$BASE_URL/health" || echo '{"status":"unreachable"}')
           echo "$RESP" | python -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('status')=='ok' else 1)"
           echo "Health check passed"
 
@@ -114,7 +114,7 @@ jobs:
           require_db_lower=$(python -c "import os; v=os.getenv('LLMLAB_REQUIRE_DB_HEALTH',''); print(v.strip().lower())")
           if [ "$require_db_lower" = "1" ] || [ "$require_db_lower" = "true" ] || [ "$require_db_lower" = "yes" ]; then
             echo "DB health check (required): $BASE_URL/health/db"
-            DB_RESP=$(curl -sS --fail --max-time 10 "$BASE_URL/health/db" || echo '{"ok":false}')
+            DB_RESP=$(curl -sS --fail --max-time 30 "$BASE_URL/health/db" || echo '{"ok":false}')
             echo "$DB_RESP" | python -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('ok') is True else 1)"
             echo "DB health check passed"
           else
