@@ -71,4 +71,10 @@ Attach this to your PR comment or ticket. Done.
 - Engineering teams who need **deterministic correctness** (not vibes) for LLM-assisted workflows
 - Reviewers and risk/compliance who want **attachable evidence** (EU AI Act-style technical files, audits) without re-running everything
 
+## Why not just guardrails or eval dashboards?
+
+- Guardrails help block obviously bad text at runtime; LLMLAB ensures **structured outputs and KPIs don’t silently drift** before deploy.
+- Eval dashboards show aggregate model quality; LLMLAB gives you **per-PR, attachable evidence packs** you can paste into tickets.
+- Both coexist: LLMLAB plugs into the GitHub Actions surface you already use.
+
 Keywords: LLM evaluation, GitHub Actions, CI gates, MLOps, quantitative finance, algo trading, KPI drift, JSON contracts, evidence artifacts.

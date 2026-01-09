@@ -30,6 +30,8 @@ The hidden cost isn’t the bug — it’s the debugging loop, re-runs, and revi
 - **Tenant isolation:** strict `X-Tenant-ID` match.
 - **Evidence-first:** outputs are designed to be attached to PRs/tickets.
 
+Together this gives you something closer to a **release gate** than an "LLM toy" – it behaves like regular CI, but the payloads happen to be AI-assisted.
+
 ## The fastest first win (5 minutes)
 
 1) Pick one deterministic workflow.
@@ -38,6 +40,18 @@ The hidden cost isn’t the bug — it’s the debugging loop, re-runs, and revi
 4) Run `POST /api/validate` and attach the response evidence to your PR.
 
 If it fails, you catch the drift before production. If it passes, you ship with confidence.
+
+## How it sits next to guardrails / eval dashboards
+
+- **Guardrails** keep obviously bad content from leaking at runtime. LLMLAB runs *before* deploy and focuses on numeric / structural regressions.
+- **Eval dashboards** track model quality over big test sets. LLMLAB focuses on the **one change in this PR**, with attachable evidence.
+- They stack: guardrails + eval dashboards + LLMLAB gives you runtime safety, population metrics, and change-by-change proof.
+
+## Who should care
+
+- Tech leads and staff engineers signing off risky AI changes.
+- MLOps / platform teams who want a repeatable gate instead of bespoke one-off checks.
+- Risk / compliance reviewers who need portable artifacts instead of screenshots.
 
 ## Copy/paste templates
 

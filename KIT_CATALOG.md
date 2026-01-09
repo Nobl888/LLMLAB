@@ -52,3 +52,11 @@ Use when the question is: “Can I run a small suite of deterministic gates and 
 - If you’re gating structured JSON outputs → start with **Contract / Invariants**.
 - If you’re gating numeric dashboards/reports/backtests → use **KPI Regression**.
 - If you need “one job runs multiple checks” → use **Ensemble / Suite**.
+
+## Example real-world flows
+
+- **Invoice agent:** contract kit ensures required fields / ranges stay stable as prompts and models evolve.
+- **Revenue dashboard:** KPI regression kit alerts when a refactor quietly shifts key metrics.
+- **Strategy backtest:** ensemble gate bundles several CSV and KPI comparisons into one attachable decision.
+
+You can start with one small, boring check and grow into richer kits over time without changing your CI wiring.
